@@ -63,11 +63,18 @@ final class YouTubeInput implements InputPlugin
             return $this->filter($this->feed($feed), $options);
         }
         $this->requireApiCredential();
+        if ($kind === 'channel') {
+            $channel = $this->json($this->http('GET', 'https://www.googleapis.com/youtube/v3/channels?part=contentDetails&id=' . rawurlencode($id), credential: 'youtube-data-api'));
+            $id = (string) ($channel['items'][0]['contentDetails']['relatedPlaylists']['uploads'] ?? '');
+            if ($id === '') {
+                throw new RuntimeException('channel uploads playlist was not found');
+            }
+            $kind = 'playlist';
+        }
         $items = [];
         $token = null;
         do {
-            $url = 'https://www.googleapis.com/youtube/v3/' . ($kind === 'playlist' ? 'playlistItems' : 'search') . '?part=snippet&maxResults=50&';
-            $url .= $kind === 'playlist' ? 'playlistId=' . rawurlencode($id) : 'channelId=' . rawurlencode($id) . '&order=date';
+            $url = 'https://www.googleapis.com/youtube/v3/playlistItems?part=snippet&maxResults=50&playlistId=' . rawurlencode($id);
             if ($token !== null) {
                 $url .= '&pageToken=' . rawurlencode($token);
             }
@@ -153,7 +160,11 @@ final class YouTubeInput implements InputPlugin
         if (isset($query['list']) && is_string($query['list']) && $query['list'] !== '') {
             return ['kind' => 'playlist', 'id' => $query['list'], 'canonical' => 'https://www.youtube.com/playlist?list=' . rawurlencode($query['list'])];
         }
-        foreach (['channel', 'c', 'user'] as $prefix) {
+        if (str_starts_with($path, '/channel/')) {
+            $id = trim(substr($path, 9), '/');
+            if ($id !== '') return ['kind' => 'channel', 'id' => $id, 'canonical' => 'https://www.youtube.com/channel/' . rawurlencode($id)];
+        }
+        foreach (['c', 'user'] as $prefix) {
             if (str_starts_with($path, '/' . $prefix . '/')) {
                 return ['kind' => 'channel-page', 'id' => trim(substr($path, strlen($prefix) + 2), '/'), 'canonical' => $source];
             }
@@ -188,9 +199,13 @@ final class YouTubeInput implements InputPlugin
         $items = [];
         foreach ($root->xpath('//a:entry') ?: [] as $entry) {
             $entry->registerXPathNamespace('yt', 'http://www.youtube.com/xml/schemas/2015');
+            $entry->registerXPathNamespace('media', 'http://search.yahoo.com/mrss/');
             $id = (string) (($entry->xpath('yt:videoId')[0] ?? ''));
             if ($id === '') continue;
-            $items[] = new DiscoveredItem($id, 'https://www.youtube.com/watch?v=' . $id, (string) ($entry->title ?? $id), (string) ($entry->children('http://www.w3.org/2005/Atom')->content ?? ''), (string) ($entry->published ?? null), (string) ($entry->children('http://www.w3.org/2005/Atom')->group->thumbnail['url'] ?? null));
+            $description = (string) (($entry->xpath('media:group/media:description')[0] ?? ''));
+            $thumbnail = $entry->xpath('media:group/media:thumbnail');
+            $artwork = isset($thumbnail[0]['url']) ? (string) $thumbnail[0]['url'] : null;
+            $items[] = new DiscoveredItem($id, 'https://www.youtube.com/watch?v=' . $id, (string) ($entry->title ?? $id), $description !== '' ? $description : null, (string) ($entry->published ?? null), $artwork);
         }
         return $items;
     }
