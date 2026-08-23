@@ -1,0 +1,9 @@
+{
+  "name": "stashd/youtube",
+  "description": "Planned YouTube Input plugin package for Stashd",
+  "type": "library",
+  "license": "MIT",
+  "require": {
+    "php": "^8.5"
+  }
+}
