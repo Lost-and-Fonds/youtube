@@ -15,8 +15,8 @@
       "license": "GPL-3.0-or-later",
       "source": "https://github.com/BtbN/FFmpeg-Builds/releases/tag/autobuild-2026-08-22-12-58",
       "platforms": {
-        "linux-amd64": {"url": "https://github.com/BtbN/FFmpeg-Builds/releases/download/autobuild-2026-08-22-12-58/ffmpeg-n9.0.1-6-g9d4ca21220-linux64-gpl-9.0.tar.xz", "sha256": "b32f5844b258b4367896b1aa6839ee72ee96d5c7c9136873f66b3c4a1fc2c1df", "archive_binary": "ffmpeg-n9.0.1-6-g9d4ca21220-linux64-gpl-9.0/ffmpeg"},
-        "linux-arm64": {"url": "https://github.com/BtbN/FFmpeg-Builds/releases/download/autobuild-2026-08-22-12-58/ffmpeg-n9.0.1-6-g9d4ca21220-linuxarm64-gpl-9.0.tar.xz", "sha256": "781a2083897b631f2de048bb008f1ea6f37d58393ca8b6a27f31230f136d8cd6", "archive_binary": "ffmpeg-n9.0.1-6-g9d4ca21220-linuxarm64-gpl-9.0/ffmpeg"}
+        "linux-amd64": {"url": "https://github.com/BtbN/FFmpeg-Builds/releases/download/autobuild-2026-08-22-12-58/ffmpeg-n9.0.1-6-g9d4ca21220-linux64-gpl-9.0.tar.xz", "sha256": "b32f5844b258b4367896b1aa6839ee72ee96d5c7c9136873f66b3c4a1fc2c1df", "archive_binary": "ffmpeg-n9.0.1-6-g9d4ca21220-linux64-gpl-9.0/bin/ffmpeg"},
+        "linux-arm64": {"url": "https://github.com/BtbN/FFmpeg-Builds/releases/download/autobuild-2026-08-22-12-58/ffmpeg-n9.0.1-6-g9d4ca21220-linuxarm64-gpl-9.0.tar.xz", "sha256": "781a2083897b631f2de048bb008f1ea6f37d58393ca8b6a27f31230f136d8cd6", "archive_binary": "ffmpeg-n9.0.1-6-g9d4ca21220-linuxarm64-gpl-9.0/bin/ffmpeg"}
       }
     }
   }
