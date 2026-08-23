@@ -1,4 +1,9 @@
 #!/bin/sh
 set -eu
 cd /staging
-exec yt-dlp "$@"
+yt-dlp "$@"
+for file in /staging/youtube-*; do
+    if [ -f "$file" ]; then
+        printf '%s\n' "$file"
+    fi
+done
