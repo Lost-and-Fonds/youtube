@@ -19,6 +19,7 @@ spl_autoload_register(static function (string $class): void {
     foreach (['YouTube\\' => dirname(__DIR__, 2) . '/src/', 'Stashd\\PluginSdk\\' => dirname(__DIR__, 3) . '/plugin-sdk/src/'] as $prefix => $root) {
         if (str_starts_with($class, $prefix)) {
             $path = $root . str_replace('\\', '/', substr($class, strlen($prefix))) . '.php';
+
             if (is_file($path)) {
                 require_once $path;
             }
@@ -42,9 +43,11 @@ it('preserves the YouTube provider contract', function (): void {
             if (str_contains($url, 'feeds/videos.xml')) {
                 return new HttpResponse(200, inlineBody: '<feed xmlns="http://www.w3.org/2005/Atom" xmlns:yt="http://www.youtube.com/xml/schemas/2015"><entry><title>One</title><published>2026-01-01T00:00:00Z</published><yt:videoId>vid1</yt:videoId></entry><entry><title>Two</title><published>2026-01-02T00:00:00Z</published><yt:videoId>vid2</yt:videoId></entry></feed>');
             }
+
             if (str_contains($url, 'oembed')) {
                 return new HttpResponse(200, inlineBody: '{"title":"Video","thumbnail_url":"https://i.ytimg.com/x.jpg"}');
             }
+
             if (str_contains($url, 'channel/') || str_contains($url, '@fixture')) {
                 return new HttpResponse(200, inlineBody: '<meta property="og:title" content="Channel"><script>"channelId":"UCfixture123"</script>');
             }

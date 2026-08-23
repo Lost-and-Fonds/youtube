@@ -27,17 +27,21 @@ final class YouTubeInput implements InputPlugin
     public function resolve(string $source): ResolvedInput
     {
         $parsed = $this->parse($source);
+
         if ($parsed['kind'] === 'channel-page') {
             $response = $this->http('GET', $source);
+
             if ($response->status === 404) {
                 throw new RuntimeException('input not found');
             }
+
             if ($response->status < 200 || $response->status >= 300) {
                 throw new RuntimeException('input page unavailable');
             }
             $html = $response->body();
             preg_match('/"channelId":"(UC[\w-]+)"/', $html, $match);
             $id = $match[1] ?? null;
+
             if ($id === null) {
                 throw new RuntimeException('channel identity was not found');
             }
@@ -54,9 +58,11 @@ final class YouTubeInput implements InputPlugin
     public function discover(string $inputId, DiscoveryIntent $intent, array $options = []): array
     {
         [$kind, $id] = str_contains($inputId, ':') ? explode(':', $inputId, 2) : ['channel', $inputId];
+
         if ($kind === 'video') {
             return $this->video($id);
         }
+
         if ($intent === DiscoveryIntent::Refresh) {
             $feed = $kind === 'playlist'
                 ? "https://www.youtube.com/feeds/videos.xml?playlist_id=" . rawurlencode($id)
@@ -64,9 +70,11 @@ final class YouTubeInput implements InputPlugin
 
             return $this->filter($this->feed($feed), $options);
         }
+
         if ($kind === 'channel') {
             $channel = $this->json($this->http('GET', 'https://www.googleapis.com/youtube/v3/channels?part=contentDetails&id=' . rawurlencode($id), credential: 'youtube-data-api'));
             $id = (string) ($channel['items'][0]['contentDetails']['relatedPlaylists']['uploads'] ?? '');
+
             if ($id === '') {
                 throw new RuntimeException('channel uploads playlist was not found');
             }
@@ -74,15 +82,19 @@ final class YouTubeInput implements InputPlugin
         }
         $items = [];
         $token = null;
+
         do {
             $url = 'https://www.googleapis.com/youtube/v3/playlistItems?part=snippet&maxResults=50&playlistId=' . rawurlencode($id);
+
             if ($token !== null) {
                 $url .= '&pageToken=' . rawurlencode($token);
             }
             $payload = $this->json($this->http('GET', $url, credential: 'youtube-data-api'));
+
             foreach ($payload['items'] ?? [] as $entry) {
                 $snippet = is_array($entry['snippet'] ?? null) ? $entry['snippet'] : [];
                 $videoId = $kind === 'playlist' ? ($snippet['resourceId']['videoId'] ?? null) : ($entry['id']['videoId'] ?? null);
+
                 if (is_string($videoId) && $videoId !== '') {
                     $items[] = $this->item($videoId, $snippet);
                 }
@@ -100,33 +112,40 @@ final class YouTubeInput implements InputPlugin
         }
         $output = 'youtube-' . preg_replace('/[^A-Za-z0-9_-]/', '_', $item->id);
         $args = ['--no-playlist', '--newline', '--no-progress', '--no-warnings', '--restrict-filenames', '--print', 'after_move:filepath', '--output', $output . '.%(ext)s', '--write-info-json', '--write-thumbnail'];
+
         if ($options->mediaKind === MediaKind::Audio) {
             array_push($args, '--extract-audio', '--audio-format', 'mp3', '--audio-quality', '128K');
         } else {
             array_push($args, '--format', 'bestvideo[height<=1080]+bestaudio/best[height<=1080]', '--merge-output-format', 'mp4');
         }
+
         if ($this->bool($options->options, 'include_captions')) {
             array_push($args, '--write-subs', '--sub-format', 'vtt', '--sub-langs', $this->text($options->options, 'caption_languages') ?? 'en');
         }
         $args[] = $item->reference;
         $result = $this->context->helpers->run('yt-dlp', $args);
+
         if ($result->exitCode !== 0) {
             throw new RuntimeException($result->exitCode === 124 ? 'acquisition timed out' : 'acquisition helper failed');
         }
         $artifacts = [];
+
         foreach (preg_split('/\R+/', $result->stdout) ?: [] as $line) {
             $path = trim($line);
+
             if ($path === '' || str_contains($path, '/') === false) {
                 continue;
             }
             $name = basename($path);
             $role = $this->role($name, $options->mediaKind);
+
             if ($role === null) {
                 continue;
             }
             $staged = $this->context->staging->stage($name, $this->mediaType($name));
             $artifacts[] = new StagedArtifact($staged->reference, $staged->mediaType, $staged->sizeBytes, $role);
         }
+
         if (! array_filter($artifacts, static fn(StagedArtifact $artifact): bool => $artifact->role === 'primary')) {
             throw new RuntimeException('acquisition produced no primary media artifact');
         }
@@ -148,34 +167,43 @@ final class YouTubeInput implements InputPlugin
         $path = (string) ($url['path'] ?? '');
         parse_str((string) ($url['query'] ?? ''), $query);
         $host = preg_replace('/^www\./', '', $host) ?: $host;
+
         if ($host === 'youtu.be') {
             $id = trim($path, '/');
 
             return $this->videoRef($id);
         }
+
         if (! in_array($host, ['youtube.com', 'm.youtube.com', 'music.youtube.com'], true)) {
             throw new RuntimeException('unsupported YouTube URL');
         }
+
         if (isset($query['v']) && is_string($query['v']) && $query['v'] !== '') {
             return $this->videoRef($query['v']);
         }
+
         if (isset($query['list']) && is_string($query['list']) && $query['list'] !== '') {
             return ['kind' => 'playlist', 'id' => $query['list'], 'canonical' => 'https://www.youtube.com/playlist?list=' . rawurlencode($query['list'])];
         }
+
         if (str_starts_with($path, '/channel/')) {
             $id = trim(substr($path, 9), '/');
+
             if ($id !== '') {
                 return ['kind' => 'channel', 'id' => $id, 'canonical' => 'https://www.youtube.com/channel/' . rawurlencode($id)];
             }
         }
+
         foreach (['c', 'user'] as $prefix) {
             if (str_starts_with($path, '/' . $prefix . '/')) {
                 return ['kind' => 'channel-page', 'id' => trim(substr($path, strlen($prefix) + 2), '/'), 'canonical' => $source];
             }
         }
+
         if (str_starts_with($path, '/@')) {
             return ['kind' => 'channel-page', 'id' => trim($path, '/'), 'canonical' => $source];
         }
+
         if (str_starts_with($path, '/shorts/')) {
             return $this->videoRef(explode('/', trim(substr($path, 8), '/'))[0], true);
         }
@@ -198,15 +226,18 @@ final class YouTubeInput implements InputPlugin
     {
         $xml = $this->http('GET', $url)->body();
         $root = simplexml_load_string($xml, \SimpleXMLElement::class, LIBXML_NONET | LIBXML_NOCDATA);
+
         if ($root === false) {
             throw new RuntimeException('YouTube feed was invalid');
         }
         $root->registerXPathNamespace('a', 'http://www.w3.org/2005/Atom');
         $items = [];
+
         foreach ($root->xpath('//a:entry') ?: [] as $entry) {
             $entry->registerXPathNamespace('yt', 'http://www.youtube.com/xml/schemas/2015');
             $entry->registerXPathNamespace('media', 'http://search.yahoo.com/mrss/');
             $id = (string) (($entry->xpath('yt:videoId')[0] ?? ''));
+
             if ($id === '') {
                 continue;
             }
@@ -237,11 +268,14 @@ final class YouTubeInput implements InputPlugin
     private function enrich(array $items): array
     {
         $byId = [];
+
         foreach (array_chunk($items, 50) as $batch) {
             $ids = implode(',', array_map(static fn(DiscoveredItem $item): string => $item->id, $batch));
             $payload = $this->json($this->http('GET', 'https://www.googleapis.com/youtube/v3/videos?part=snippet,contentDetails,liveStreamingDetails&id=' . $ids, credential: 'youtube-data-api'));
+
             foreach ($payload['items'] ?? [] as $entry) {
                 $id = is_string($entry['id'] ?? null) ? $entry['id'] : '';
+
                 if ($id === '') {
                     continue;
                 }
@@ -281,12 +315,15 @@ final class YouTubeInput implements InputPlugin
     private function http(string $method, string $url, array $headers = [], ?string $body = null, ?string $credential = null): HttpResponse
     {
         $response = $this->context->http->request($method, $url, $headers, $body, $credential);
+
         if ($response->status === 404) {
             throw new RuntimeException('YouTube resource not found');
         }
+
         if ($response->status === 429) {
             throw new RuntimeException('YouTube rate limit reached');
         }
+
         if ($response->status < 200 || $response->status >= 300) {
             throw new RuntimeException('YouTube request failed');
         }
@@ -297,6 +334,7 @@ final class YouTubeInput implements InputPlugin
     private function json(HttpResponse $response): array
     {
         $value = json_decode($response->body(), true);
+
         if (! is_array($value)) {
             throw new RuntimeException('YouTube response was invalid JSON');
         }
@@ -334,15 +372,19 @@ final class YouTubeInput implements InputPlugin
     private function role(string $name, MediaKind $kind): ?string
     {
         $lower = strtolower($name);
+
         if (str_ends_with($lower, '.info.json')) {
             return 'metadata';
         }
+
         if (str_ends_with($lower, '.vtt')) {
             return 'captions';
         }
+
         if (preg_match('/\.(jpe?g|png|webp)$/', $lower)) {
             return 'artwork';
         }
+
         if (preg_match('/\.(mp4|mkv|webm|mp3|m4a|opus)$/', $lower)) {
             return 'primary';
         }
