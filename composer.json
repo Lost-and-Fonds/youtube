@@ -1,9 +1,9 @@
 {
   "name": "stashd/youtube",
-  "description": "Planned YouTube Input plugin package for Stashd",
-  "type": "library",
+  "description": "YouTube Input plugin for Stashd",
+  "type": "stashd-plugin",
   "license": "MIT",
-  "require": {
-    "php": "^8.5"
-  }
+  "require": {"php": "^8.5", "stashd/plugin-sdk": "^0.2"},
+  "autoload": {"psr-4": {"YouTube\\": "src/"}},
+  "extra": {"stashd-plugin": {"manifest": "stashd-plugin/plugin.json", "entrypoint": "stashd-plugin/plugin.php"}}
 }
