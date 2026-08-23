@@ -88,7 +88,7 @@ final class YouTubeInput implements InputPlugin
             $token = is_string($payload['nextPageToken'] ?? null) ? $payload['nextPageToken'] : null;
         } while ($token !== null);
 
-        return $this->filter($items, $options);
+        return $this->filter($this->enrich($items), $options);
     }
 
     public function acquire(DiscoveredItem $item, AcquisitionOptions $options): AcquisitionResult
@@ -220,6 +220,30 @@ final class YouTubeInput implements InputPlugin
     private function item(string $id, array $snippet): DiscoveredItem
     {
         return new DiscoveredItem($id, 'https://www.youtube.com/watch?v=' . $id, (string) ($snippet['title'] ?? $id), $snippet['description'] ?? null, $snippet['publishedAt'] ?? null, $snippet['thumbnails']['high']['url'] ?? null);
+    }
+
+    /** @param list<DiscoveredItem> $items @return list<DiscoveredItem> */
+    private function enrich(array $items): array
+    {
+        $byId = [];
+        foreach (array_chunk($items, 50) as $batch) {
+            $ids = implode(',', array_map(static fn(DiscoveredItem $item): string => $item->id, $batch));
+            $payload = $this->json($this->http('GET', 'https://www.googleapis.com/youtube/v3/videos?part=snippet,contentDetails,liveStreamingDetails&id=' . $ids, credential: 'youtube-data-api'));
+            foreach ($payload['items'] ?? [] as $entry) {
+                $id = is_string($entry['id'] ?? null) ? $entry['id'] : '';
+                if ($id === '') continue;
+                $snippet = is_array($entry['snippet'] ?? null) ? $entry['snippet'] : [];
+                $kind = isset($entry['liveStreamingDetails']) ? 'live' : null;
+                $byId[$id] = new DiscoveredItem($id, 'https://www.youtube.com/watch?v=' . $id, (string) ($snippet['title'] ?? $id), $snippet['description'] ?? null, $snippet['publishedAt'] ?? null, $snippet['thumbnails']['high']['url'] ?? null, $this->duration($entry['contentDetails']['duration'] ?? null), $kind);
+            }
+        }
+        return array_map(static fn(DiscoveredItem $item): DiscoveredItem => $byId[$item->id] ?? $item, $items);
+    }
+
+    private function duration(mixed $value): ?int
+    {
+        if (! is_string($value) || preg_match('/^PT(?:(\d+)H)?(?:(\d+)M)?(?:(\d+)S)?$/', $value, $match) !== 1) return null;
+        return ((int) ($match[1] ?? 0) * 3600) + ((int) ($match[2] ?? 0) * 60) + (int) ($match[3] ?? 0);
     }
 
     /** @param list<InputOption> $options @param list<DiscoveredItem> $items */
