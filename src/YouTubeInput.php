@@ -62,7 +62,6 @@ final class YouTubeInput implements InputPlugin
                 : "https://www.youtube.com/feeds/videos.xml?channel_id=" . rawurlencode($id);
             return $this->filter($this->feed($feed), $options);
         }
-        $this->requireApiCredential();
         if ($kind === 'channel') {
             $channel = $this->json($this->http('GET', 'https://www.googleapis.com/youtube/v3/channels?part=contentDetails&id=' . rawurlencode($id), credential: 'youtube-data-api'));
             $id = (string) ($channel['items'][0]['contentDetails']['relatedPlaylists']['uploads'] ?? '');
@@ -241,11 +240,6 @@ final class YouTubeInput implements InputPlugin
         if ($response->status === 429) throw new RuntimeException('YouTube rate limit reached');
         if ($response->status < 200 || $response->status >= 300) throw new RuntimeException('YouTube request failed');
         return $response;
-    }
-
-    private function requireApiCredential(): void
-    {
-        $this->http('GET', 'https://www.googleapis.com/youtube/v3/channels?part=id&id=invalid', credential: 'youtube-data-api');
     }
 
     private function json(HttpResponse $response): array
