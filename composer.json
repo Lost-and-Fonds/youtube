@@ -4,6 +4,10 @@
   "type": "stashd-plugin",
   "license": "MIT",
   "require": {"php": "^8.5", "stashd/plugin-sdk": "^0.2"},
+  "require-dev": {"pestphp/pest": "^4.0", "phpstan/phpstan": "^2.2", "friendsofphp/php-cs-fixer": "^3.95", "squizlabs/php_codesniffer": "^4.0"},
   "autoload": {"psr-4": {"YouTube\\": "src/"}},
+  "scripts": {"test": "vendor/bin/pest", "test:static": "vendor/bin/phpstan analyse", "lint": ["composer dump-autoload --optimize --strict-psr --dry-run", "vendor/bin/php-cs-fixer check --config=.php-cs-fixer.dist.php"]},
+  "repositories": [{"type": "vcs", "url": "https://github.com/Lost-and-Fonds/plugin-sdk.git"}, {"type": "vcs", "url": "https://github.com/Lost-and-Fonds/plugin-api.git"}],
+  "config": {"allow-plugins": {"pestphp/pest-plugin": true}},
   "extra": {"stashd-plugin": {"manifest": "stashd-plugin/plugin.json", "entrypoint": "stashd-plugin/plugin.php"}}
 }

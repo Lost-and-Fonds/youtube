@@ -14,3 +14,9 @@ Install with Composer using `stashd/youtube`. The package requires PHP 8.5,
 `yt-dlp`, and FFmpeg in the plugin runtime image. Run `./tests/run.sh` for
 offline fixture tests. Stashd remains authoritative for identity, Vault state,
 and promotion; this package owns YouTube protocol behavior only.
+
+## Release artifact
+
+Run `tools/build-oci.sh out/plugin.oci` after installing production dependencies. The output is an OCI image layout; helper-bearing plugins require pinned executable payloads through `PLUGIN_HELPERS_DIR`.
+
+Helper release inputs are deliberate: set `PLUGIN_HELPERS_DIR` to a directory containing the pinned, checksum-verified helper executables before running `tools/build-oci.sh`. The build refuses missing helpers and never uses host PATH.

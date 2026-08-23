@@ -11,7 +11,10 @@
     {"allowed_prefixes": ["https://www.youtube.com/", "https://youtube.com/", "https://m.youtube.com/", "https://music.youtube.com/", "https://youtu.be/"], "operations": ["resolve", "refresh", "complete"]},
     {"allowed_prefixes": ["https://www.googleapis.com/youtube/v3/"], "operations": ["complete"], "credential": {"name": "youtube-data-api", "secret_key": "youtube_data_api_key", "parameter": "key", "placement": "query"}}
   ],
-  "helper": {"name": "yt-dlp", "executable": "stashd-plugin/helpers/yt-dlp"},
+  "helpers": {
+    "yt-dlp": {"executable": "stashd-plugin/helpers/yt-dlp"},
+    "ffmpeg": {"executable": "stashd-plugin/helpers/ffmpeg"}
+  },
   "input_options": [
     {"key": "include_shorts", "label": "Include Shorts", "type": "bool", "default": false},
     {"key": "include_live", "label": "Include live and premieres", "type": "bool", "default": false},
