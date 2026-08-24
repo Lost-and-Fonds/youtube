@@ -1,0 +1,51 @@
+name: Publish OCI plugin
+on:
+  push:
+    tags: ['v*']
+  workflow_dispatch:
+permissions:
+  contents: read
+  packages: write
+jobs:
+  publish:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with: {path: plugins/youtube}
+      - uses: actions/checkout@v4
+        with: {repository: Lost-and-Fonds/stashd, ref: design/plugin-runtime, path: core}
+      - uses: actions/checkout@v4
+        with: {repository: Lost-and-Fonds/plugin-api, path: plugin-api}
+      - uses: actions/checkout@v4
+        with: {repository: Lost-and-Fonds/plugin-sdk, path: plugin-sdk}
+      - uses: actions/checkout@v4
+        with: {repository: Lost-and-Fonds/jellyfin, path: plugins/jellyfin}
+      - uses: actions/checkout@v4
+        with: {repository: Lost-and-Fonds/plex, path: plugins/plex}
+      - uses: actions/checkout@v4
+        with: {repository: Lost-and-Fonds/podcast, path: plugins/podcast}
+      - uses: shivammathur/setup-php@v2
+        with: {php-version: '8.5', extensions: xml, coverage: none}
+      - name: Install build dependencies
+        working-directory: core
+        run: composer install --no-interaction --prefer-dist --no-progress --no-scripts
+      - name: Build and audit OCI layout
+        working-directory: core
+        env: {PLUGIN_SOURCE: ../plugins/youtube}
+        run: |
+          curl -fsSL https://github.com/opencontainers/umoci/releases/download/v0.6.0/umoci.linux.amd64 -o /tmp/umoci
+          echo 'b51c267ec394499e42c6fde47f240b7b7dba57ea49df0b5acd304378b82a3b71  /tmp/umoci' | sha256sum -c -
+          chmod 0555 /tmp/umoci
+          php -r 'require "vendor/autoload.php"; $root="/tmp/plugin-build"; $built=(new Stashd\PluginRuntime\Package\PluginBuilder($root, new Stashd\PluginRuntime\Package\Umoci("/tmp/umoci")))->materialize(getenv("PLUGIN_SOURCE"), "linux-amd64"); file_put_contents("/tmp/plugin-digest", $built["digest"]); file_put_contents("/tmp/plugin-layout", $built["layout"]);'
+          test -z "$(find "$(cat /tmp/plugin-layout)" -type f \( -name '.env' -o -name '*.key' \))"
+      - uses: docker/login-action@v3
+        with: {registry: ghcr.io, username: '${{ github.actor }}', password: '${{ secrets.GITHUB_TOKEN }}'}
+      - name: Install ORAS
+        run: |
+          curl -fsSL https://github.com/oras-project/oras/releases/download/v1.3.3/oras_1.3.3_linux_amd64.tar.gz -o /tmp/oras.tgz
+          echo '9ce999f8d2de03fc03968b29d743077a58783e545e5eaa53917ca177352d0e59  /tmp/oras.tgz' | sha256sum -c -
+          tar -xzf /tmp/oras.tgz -C /tmp oras
+      - name: Push immutable plugin artifact
+        run: |
+          tag="${GITHUB_REF_NAME#v}"
+          /tmp/oras cp --from-oci-layout "$(cat /tmp/plugin-layout):stashd" "ghcr.io/lost-and-fonds/youtube:${tag}"
