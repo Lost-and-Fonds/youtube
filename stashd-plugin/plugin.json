@@ -16,6 +16,9 @@
     "yt-dlp": {"executable": "stashd-plugin/helpers/yt-dlp", "network": true},
     "ffmpeg": {"executable": "stashd-plugin/helpers/ffmpeg", "network": false}
   },
+  "source_fields": [
+    {"key": "url", "label": "Channel, playlist, or video URL", "type": "text", "required": true, "description": "Paste a YouTube channel, playlist, or video URL."}
+  ],
   "input_options": [
     {"key": "include_shorts", "label": "Include Shorts", "type": "bool", "default": false},
     {"key": "include_live", "label": "Include live and premieres", "type": "bool", "default": false},

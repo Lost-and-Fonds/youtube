@@ -18,14 +18,16 @@ use Stashd\PluginSdk\MediaKind;
 use Stashd\PluginSdk\OptionValue;
 use Stashd\PluginSdk\PluginContext;
 use Stashd\PluginSdk\ResolvedInput;
+use Stashd\PluginSdk\SourceDescriptor;
 use Stashd\PluginSdk\StagedArtifact;
 
 final class YouTubeInput implements InputPlugin
 {
     public function __construct(private readonly PluginContext $context) {}
 
-    public function resolve(string $source): ResolvedInput
+    public function resolve(SourceDescriptor $source): ResolvedInput
     {
+        $source = $source->text('url') ?? throw new RuntimeException('A YouTube URL is required');
         $parsed = $this->parse($source);
 
         if ($parsed['kind'] === 'channel-page') {

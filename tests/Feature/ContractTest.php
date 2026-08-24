@@ -13,6 +13,7 @@ use Stashd\PluginSdk\OptionValue;
 use Stashd\PluginSdk\PluginContext;
 use Stashd\PluginSdk\StagedArtifact;
 use Stashd\PluginSdk\StagingArea;
+use Stashd\PluginSdk\SourceDescriptor;
 use YouTube\YouTubeInput;
 
 spl_autoload_register(static function (string $class): void {
@@ -87,9 +88,9 @@ it('preserves the YouTube provider contract', function (): void {
     $stage = new YtStage();
     $helper = new YtHelper();
     $plugin = new YouTubeInput(new PluginContext(http: $http, staging: $stage, helpers: $helper));
-    ytAssert($plugin->resolve('https://youtu.be/abc123')->id === 'video:abc123', 'short URL identity failed');
-    ytAssert($plugin->resolve('https://www.youtube.com/playlist?list=PL123')->id === 'playlist:PL123', 'playlist identity failed');
-    ytAssert($plugin->resolve('https://www.youtube.com/@fixture')->id === 'UCfixture123', 'handle resolution failed');
+    ytAssert($plugin->resolve(new SourceDescriptor(['url' => OptionValue::text('https://youtu.be/abc123')]))->id === 'video:abc123', 'short URL identity failed');
+    ytAssert($plugin->resolve(new SourceDescriptor(['url' => OptionValue::text('https://www.youtube.com/playlist?list=PL123')]))->id === 'playlist:PL123', 'playlist identity failed');
+    ytAssert($plugin->resolve(new SourceDescriptor(['url' => OptionValue::text('https://www.youtube.com/@fixture')]))->id === 'UCfixture123', 'handle resolution failed');
     $items = $plugin->discover('UCfixture123', \Stashd\PluginSdk\DiscoveryIntent::Refresh);
     ytAssert(count($items) === 2 && $items[0]->id === 'vid1', 'Atom discovery failed');
     $acquired = $plugin->acquire($items[0], new AcquisitionOptions(MediaKind::Video));
