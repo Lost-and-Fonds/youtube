@@ -49,6 +49,10 @@ it('preserves the YouTube provider contract', function (): void {
                 return new HttpResponse(200, inlineBody: '{"title":"Video","thumbnail_url":"https://i.ytimg.com/x.jpg"}');
             }
 
+            if (str_contains($url, 'playlist')) {
+                return new HttpResponse(200, inlineBody: '<meta property="og:title" content="Playlist">');
+            }
+
             if (str_contains($url, 'channel/') || str_contains($url, '@fixture')) {
                 return new HttpResponse(200, inlineBody: '<meta property="og:title" content="Channel"><script>"channelId":"UCfixture123"</script>');
             }
@@ -90,7 +94,10 @@ it('preserves the YouTube provider contract', function (): void {
     $plugin = new YouTubeInput(new PluginContext(http: $http, staging: $stage, helpers: $helper));
     ytAssert($plugin->resolve(new SourceDescriptor(['url' => OptionValue::text('https://youtu.be/abc123')]))->id === 'video:abc123', 'short URL identity failed');
     ytAssert($plugin->resolve(new SourceDescriptor(['url' => OptionValue::text('https://www.youtube.com/playlist?list=PL123')]))->id === 'playlist:PL123', 'playlist identity failed');
-    ytAssert($plugin->resolve(new SourceDescriptor(['url' => OptionValue::text('https://www.youtube.com/@fixture')]))->id === 'UCfixture123', 'handle resolution failed');
+    $channel = $plugin->resolve(new SourceDescriptor(['url' => OptionValue::text('https://www.youtube.com/@fixture')]));
+    ytAssert($channel->id === 'UCfixture123' && $channel->title === 'Channel', 'handle resolution failed');
+    ytAssert($plugin->resolve(new SourceDescriptor(['url' => OptionValue::text('https://www.youtube.com/playlist?list=PL123')]))->title === 'Playlist', 'playlist title resolution failed');
+    ytAssert($plugin->resolve(new SourceDescriptor(['url' => OptionValue::text('https://youtu.be/abc123')]))->title === 'Video', 'video title resolution failed');
     $items = $plugin->discover('UCfixture123', \Stashd\PluginSdk\DiscoveryIntent::Refresh);
     ytAssert(count($items) === 2 && $items[0]->id === 'vid1', 'Atom discovery failed');
     $acquired = $plugin->acquire($items[0], new AcquisitionOptions(MediaKind::Video));

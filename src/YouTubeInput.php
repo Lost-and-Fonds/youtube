@@ -30,31 +30,36 @@ final class YouTubeInput implements InputPlugin
         $source = $source->text('url') ?? throw new RuntimeException('A YouTube URL is required');
         $parsed = $this->parse($source);
 
-        if ($parsed['kind'] === 'channel-page') {
-            $response = $this->http('GET', $source);
-
-            if ($response->status === 404) {
-                throw new RuntimeException('input not found');
-            }
-
-            if ($response->status < 200 || $response->status >= 300) {
-                throw new RuntimeException('input page unavailable');
-            }
-            $html = $response->body();
-            preg_match('/"channelId":"(UC[\w-]+)"/', $html, $match);
-            $id = $match[1] ?? null;
-
-            if ($id === null) {
-                throw new RuntimeException('channel identity was not found');
-            }
+        if (in_array($parsed['kind'], ['channel-page', 'channel', 'playlist'], true)) {
+            $html = $this->body($this->http('GET', $parsed['canonical']));
+            $canonical = $this->meta($html, 'og:url') ?? $parsed['canonical'];
             $title = $this->meta($html, 'og:title');
             $artwork = $this->meta($html, 'og:image');
 
-            return new ResolvedInput($id, "https://www.youtube.com/channel/{$id}", 'channel', $title, $artwork);
+            if ($parsed['kind'] === 'channel-page') {
+                preg_match('~/channel/(UC[\\w-]+)~', $canonical, $match);
+                $id = $match[1] ?? null;
+                $id ??= preg_match('/"channelId":"(UC[\\w-]+)"/', $html, $match) === 1 ? $match[1] : null;
+
+                if ($id === null) {
+                    throw new RuntimeException('channel identity was not found');
+                }
+                $canonical = "https://www.youtube.com/channel/{$id}";
+            } else {
+                $id = $parsed['id'];
+            }
+
+            return new ResolvedInput($id, $canonical, $parsed['kind'] === 'channel-page' ? 'channel' : $parsed['kind'], $title, $artwork);
         }
         $id = $parsed['id'];
+        $title = null;
 
-        return new ResolvedInput($parsed['kind'] === 'video' ? "video:{$id}" : "{$parsed['kind']}:{$id}", $parsed['canonical'], $parsed['kind'], $parsed['kind'] === 'video' ? "YouTube Video {$id}" : null);
+        if ($parsed['kind'] === 'video') {
+            $payload = $this->json($this->http('GET', 'https://www.youtube.com/oembed?format=json&url=' . rawurlencode($parsed['canonical'])));
+            $title = is_string($payload['title'] ?? null) && $payload['title'] !== '' ? $payload['title'] : "YouTube Video {$id}";
+        }
+
+        return new ResolvedInput("{$parsed['kind']}:{$id}", $parsed['canonical'], $parsed['kind'], $title);
     }
 
     public function discover(string $inputId, DiscoveryIntent $intent, array $options = []): array
@@ -316,6 +321,7 @@ final class YouTubeInput implements InputPlugin
 
     private function http(string $method, string $url, array $headers = [], ?string $body = null, ?string $credential = null): HttpResponse
     {
+        $headers = ['User-Agent' => 'Mozilla/5.0 (compatible; Stashd/1.0)', ...$headers];
         $response = $this->context->http->request($method, $url, $headers, $body, $credential);
 
         if ($response->status === 404) {
@@ -335,13 +341,32 @@ final class YouTubeInput implements InputPlugin
 
     private function json(HttpResponse $response): array
     {
-        $value = json_decode($response->body(), true);
+        $value = json_decode($this->body($response), true);
 
         if (! is_array($value)) {
             throw new RuntimeException('YouTube response was invalid JSON');
         }
 
         return $value;
+    }
+
+    private function body(HttpResponse $response): string
+    {
+        if ($response->inlineBody !== null) {
+            return $response->inlineBody;
+        }
+
+        if ($response->resource === null) {
+            throw new RuntimeException('YouTube response body was unavailable');
+        }
+        $body = '';
+
+        while (! $response->resource->isEof()) {
+            $body .= $response->resource->read();
+        }
+        $response->resource->close();
+
+        return $body;
     }
 
     private function meta(string $html, string $name): ?string
