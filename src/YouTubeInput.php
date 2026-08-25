@@ -49,7 +49,7 @@ final class YouTubeInput implements InputPlugin
                 $id = $parsed['id'];
             }
 
-            return new ResolvedInput($id, $canonical, $parsed['kind'] === 'channel-page' ? 'channel' : $parsed['kind'], $title, $artwork);
+            return new ResolvedInput($parsed['kind'] === 'playlist' ? "playlist:{$id}" : $id, $canonical, $parsed['kind'] === 'channel-page' ? 'channel' : $parsed['kind'], $title, $artwork);
         }
         $id = $parsed['id'];
         $title = null;

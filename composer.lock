@@ -8,21 +8,27 @@
     "packages": [
         {
             "name": "stashd/php-sdk",
-            "version": "v0.2.2",
+            "version": "0.2.3",
             "source": {
                 "type": "git",
                 "url": "https://github.com/Lost-and-Fonds/stashd-php-sdk.git",
-                "reference": "d9b349107c2e5c5336e82feab7809dc3df881675"
+                "reference": "111c922b950b3a56a38b87f62e9ee3fb28b054ef"
             },
             "dist": {
                 "type": "zip",
-                "url": "https://api.github.com/repos/Lost-and-Fonds/stashd-php-sdk/zipball/d9b349107c2e5c5336e82feab7809dc3df881675",
-                "reference": "d9b349107c2e5c5336e82feab7809dc3df881675",
+                "url": "https://api.github.com/repos/Lost-and-Fonds/stashd-php-sdk/zipball/111c922b950b3a56a38b87f62e9ee3fb28b054ef",
+                "reference": "111c922b950b3a56a38b87f62e9ee3fb28b054ef",
                 "shasum": ""
             },
             "require": {
                 "php": "^8.5",
                 "stashd/plugin-api": "^0.1"
+            },
+            "require-dev": {
+                "friendsofphp/php-cs-fixer": "^3.95",
+                "pestphp/pest": "^4.0",
+                "phpstan/phpstan": "^2.2",
+                "squizlabs/php_codesniffer": "^4.0"
             },
             "type": "library",
             "autoload": {
@@ -30,15 +36,30 @@
                     "Stashd\\PluginSdk\\": "src/"
                 }
             },
+            "scripts": {
+                "test": [
+                    "vendor/bin/pest"
+                ],
+                "test:static": [
+                    "vendor/bin/phpstan analyse"
+                ],
+                "format": [
+                    "vendor/bin/php-cs-fixer fix --config=.php-cs-fixer.dist.php"
+                ],
+                "lint": [
+                    "composer dump-autoload --optimize --strict-psr --dry-run",
+                    "vendor/bin/php-cs-fixer check --allow-risky=yes --config=.php-cs-fixer.dist.php"
+                ]
+            },
             "license": [
                 "MIT"
             ],
-            "description": "Independent PHP SDK for Stashd plugins",
+            "description": "PHP authoring SDK for Stashd plugins",
             "support": {
-                "source": "https://github.com/Lost-and-Fonds/stashd-php-sdk/tree/v0.2.2",
+                "source": "https://github.com/Lost-and-Fonds/stashd-php-sdk/tree/v0.2.3",
                 "issues": "https://github.com/Lost-and-Fonds/stashd-php-sdk/issues"
             },
-            "time": "2026-08-23T05:36:15+00:00"
+            "time": "2026-08-25T07:26:08+00:00"
         },
         {
             "name": "stashd/plugin-api",
