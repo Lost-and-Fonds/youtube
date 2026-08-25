@@ -8,9 +8,12 @@
   "helpers_lock": "stashd-plugin/helpers.lock.json",
   "kind": "input",
   "source_prefixes": ["https://www.youtube.com/", "https://youtube.com/", "https://m.youtube.com/", "https://music.youtube.com/", "https://youtu.be/"],
+  "credentials": [
+    {"key": "youtube-data-api", "label": "YouTube Data API key", "description": "Improves complete channel and playlist discovery.", "secret_key": "youtube_data_api_key", "secret_type": "api_key", "required": false}
+  ],
   "http_grants": [
     {"allowed_prefixes": ["https://www.youtube.com/", "https://youtube.com/", "https://m.youtube.com/", "https://music.youtube.com/", "https://youtu.be/"], "operations": ["resolve", "refresh", "complete"]},
-    {"allowed_prefixes": ["https://www.googleapis.com/youtube/v3/"], "operations": ["complete"], "credential": {"name": "youtube-data-api", "secret_key": "youtube_data_api_key", "parameter": "key", "placement": "query"}}
+    {"allowed_prefixes": ["https://www.googleapis.com/youtube/v3/"], "operations": ["complete"], "credential": {"name": "youtube-data-api", "parameter": "key", "placement": "query"}}
   ],
   "helpers": {
     "yt-dlp": {"executable": "stashd-plugin/helpers/yt-dlp", "network": true},
