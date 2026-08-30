@@ -8,16 +8,16 @@
     "packages": [
         {
             "name": "stashd/php-sdk",
-            "version": "0.2.5",
+            "version": "0.2.6",
             "source": {
                 "type": "git",
                 "url": "https://github.com/Lost-and-Fonds/stashd-php-sdk.git",
-                "reference": "653414538c84bb4d310bd77bd96ac6d19e5275e7"
+                "reference": "7539339dc4ccef997c58675742b28e54746a27e8"
             },
             "dist": {
                 "type": "zip",
-                "url": "https://api.github.com/repos/Lost-and-Fonds/stashd-php-sdk/zipball/653414538c84bb4d310bd77bd96ac6d19e5275e7",
-                "reference": "653414538c84bb4d310bd77bd96ac6d19e5275e7",
+                "url": "https://api.github.com/repos/Lost-and-Fonds/stashd-php-sdk/zipball/7539339dc4ccef997c58675742b28e54746a27e8",
+                "reference": "7539339dc4ccef997c58675742b28e54746a27e8",
                 "shasum": ""
             },
             "require": {
@@ -56,10 +56,10 @@
             ],
             "description": "PHP authoring SDK for Stashd plugins",
             "support": {
-                "source": "https://github.com/Lost-and-Fonds/stashd-php-sdk/tree/v0.2.5",
+                "source": "https://github.com/Lost-and-Fonds/stashd-php-sdk/tree/v0.2.6",
                 "issues": "https://github.com/Lost-and-Fonds/stashd-php-sdk/issues"
             },
-            "time": "2026-08-30T03:38:34+00:00"
+            "time": "2026-08-30T03:49:46+00:00"
         },
         {
             "name": "stashd/plugin-api",
