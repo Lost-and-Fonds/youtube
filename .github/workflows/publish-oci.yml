@@ -13,7 +13,7 @@ jobs:
       - uses: actions/checkout@v4
         with: {path: plugins/youtube}
       - uses: actions/checkout@v4
-        with: {repository: Lost-and-Fonds/stashd, ref: design/plugin-runtime, path: core}
+        with: {repository: Lost-and-Fonds/stashd, ref: main, path: core}
       - uses: actions/checkout@v4
         with: {repository: Lost-and-Fonds/plugin-api, path: plugin-api}
       - uses: actions/checkout@v4
