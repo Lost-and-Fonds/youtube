@@ -103,5 +103,7 @@ it('preserves the YouTube provider contract', function (): void {
     $acquired = $plugin->acquire($items[0], new AcquisitionOptions(MediaKind::Video));
     ytAssert(count($acquired->artifacts) === 3, 'helper artifacts were not classified');
     ytAssert($acquired->artifacts[0]->role === 'primary' && in_array('--format', $helper->args, true), 'video acquisition strategy failed');
+    $ffmpegLocation = array_search('--ffmpeg-location', $helper->args, true);
+    ytAssert($ffmpegLocation !== false && ($helper->args[$ffmpegLocation + 1] ?? null) === '/plugin/stashd-plugin/helpers', 'bundled ffmpeg path was not configured');
     expect(true)->toBeTrue();
 });

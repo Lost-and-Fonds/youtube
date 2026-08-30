@@ -118,7 +118,7 @@ final class YouTubeInput implements InputPlugin
             throw new RuntimeException('acquisition capabilities are unavailable');
         }
         $output = 'youtube-' . preg_replace('/[^A-Za-z0-9_-]/', '_', $item->id);
-        $args = ['--no-playlist', '--newline', '--no-warnings', '--restrict-filenames', '--print', 'after_move:filepath', '--output', $output . '.%(ext)s', '--write-info-json', '--write-thumbnail'];
+        $args = ['--no-playlist', '--newline', '--no-warnings', '--restrict-filenames', '--ffmpeg-location', '/plugin/stashd-plugin/helpers', '--print', 'after_move:filepath', '--output', $output . '.%(ext)s', '--write-info-json', '--write-thumbnail'];
 
         if ($options->mediaKind === MediaKind::Audio) {
             array_push($args, '--extract-audio', '--audio-format', 'mp3', '--audio-quality', '128K');
