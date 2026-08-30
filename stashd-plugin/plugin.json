@@ -1,13 +1,13 @@
 {
   "id": "youtube",
   "name": "YouTube",
-  "version": "0.3.15",
+  "version": "0.3.16",
   "runtime": "php",
   "api_version": "0.1",
   "entrypoint": "stashd-plugin/plugin.php",
   "helpers_lock": "stashd-plugin/helpers.lock.json",
   "kind": "input",
-  "source_prefixes": ["https://www.youtube.com/", "https://youtube.com/", "https://m.youtube.com/", "https://music.youtube.com/", "https://youtu.be/"],
+  "source_prefixes": ["https://www.youtube.com/", "https://youtube.com/", "https://m.youtube.com/", "https://music.youtube.com/", "https://youtu.be/", "http://www.youtube.com/", "http://youtube.com/", "http://m.youtube.com/", "http://music.youtube.com/", "http://youtu.be/"],
   "credentials": [
     {"key": "youtube-data-api", "label": "YouTube Data API key", "description": "Improves complete channel and playlist discovery.", "secret_key": "youtube_data_api_key", "secret_type": "api_key", "required": false}
   ],
