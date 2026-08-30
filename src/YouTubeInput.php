@@ -203,12 +203,12 @@ final class YouTubeInput implements InputPlugin
 
         foreach (['c', 'user'] as $prefix) {
             if (str_starts_with($path, '/' . $prefix . '/')) {
-                return ['kind' => 'channel-page', 'id' => trim(substr($path, strlen($prefix) + 2), '/'), 'canonical' => $source];
+                return ['kind' => 'channel-page', 'id' => trim(substr($path, strlen($prefix) + 2), '/'), 'canonical' => $this->https($source)];
             }
         }
 
         if (str_starts_with($path, '/@')) {
-            return ['kind' => 'channel-page', 'id' => trim($path, '/'), 'canonical' => $source];
+            return ['kind' => 'channel-page', 'id' => trim($path, '/'), 'canonical' => $this->https($source)];
         }
 
         if (str_starts_with($path, '/shorts/')) {
@@ -226,6 +226,11 @@ final class YouTubeInput implements InputPlugin
         }
 
         return ['kind' => 'video', 'id' => $id, 'canonical' => 'https://www.youtube.com/watch?v=' . rawurlencode($id)];
+    }
+
+    private function https(string $url): string
+    {
+        return preg_replace('~^http://~i', 'https://', $url) ?: $url;
     }
 
     /** @return list<DiscoveredItem> */
