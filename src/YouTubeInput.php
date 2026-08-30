@@ -231,7 +231,7 @@ final class YouTubeInput implements InputPlugin
     /** @return list<DiscoveredItem> */
     private function feed(string $url): array
     {
-        $xml = $this->http('GET', $url)->body();
+        $xml = $this->body($this->http('GET', $url));
         $root = simplexml_load_string($xml, \SimpleXMLElement::class, LIBXML_NONET | LIBXML_NOCDATA);
 
         if ($root === false) {

@@ -1,7 +1,7 @@
 {
   "id": "youtube",
   "name": "YouTube",
-  "version": "0.3.14",
+  "version": "0.3.15",
   "runtime": "php",
   "api_version": "0.1",
   "entrypoint": "stashd-plugin/plugin.php",
