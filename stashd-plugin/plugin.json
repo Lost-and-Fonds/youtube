@@ -1,7 +1,7 @@
 {
   "id": "youtube",
   "name": "YouTube",
-  "version": "0.3.21",
+  "version": "0.3.23",
   "runtime": "php",
   "api_version": "0.1",
   "entrypoint": "stashd-plugin/plugin.php",
@@ -28,5 +28,5 @@
     {"key": "include_captions", "label": "Include captions", "type": "bool", "default": false},
     {"key": "caption_languages", "label": "Caption languages", "type": "text", "default": "en"}
   ],
-  "operations": {"complete": ["credential:youtube-data-api"], "acquire": ["helper:yt-dlp"]}
+  "operations": {"complete": ["credential:youtube-data-api", "helper:yt-dlp"], "acquire": ["helper:yt-dlp"]}
 }

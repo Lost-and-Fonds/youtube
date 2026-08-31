@@ -84,6 +84,12 @@ it('preserves the YouTube provider contract', function (): void {
             ytAssert($name === 'yt-dlp', 'wrong helper');
             $this->args = $arguments;
 
+            if (in_array('--format', $arguments, true) && (str_contains((string) end($arguments), 'playlist?list=') || str_contains((string) end($arguments), '/channel/'))) {
+                return new HelperResult(0, json_encode(['entries' => [
+                    ['id' => 'backfill1', 'title' => 'Backfill item', 'upload_date' => '20260101', 'filesize_approx' => 1234],
+                ]], JSON_THROW_ON_ERROR));
+            }
+
             return new HelperResult(0, "/staging/youtube-vid1.mp4\n/staging/youtube-vid1.info.json\n/staging/youtube-vid1.jpg\n");
         }
     }
@@ -100,6 +106,8 @@ it('preserves the YouTube provider contract', function (): void {
     ytAssert($plugin->resolve(new SourceDescriptor(['url' => OptionValue::text('https://youtu.be/abc123')]))->title === 'Video', 'video title resolution failed');
     $items = $plugin->discover('UCfixture123', \Stashd\PluginSdk\DiscoveryIntent::Refresh);
     ytAssert(count($items) === 2 && $items[0]->id === 'vid1', 'Atom discovery failed');
+    $backfill = $plugin->discover('UCfixture123', \Stashd\PluginSdk\DiscoveryIntent::Complete);
+    ytAssert(count($backfill) === 1 && $backfill[0]->id === 'backfill1', 'yt-dlp complete discovery failed');
     $acquired = $plugin->acquire($items[0], new AcquisitionOptions(MediaKind::Video));
     ytAssert(count($acquired->artifacts) === 3, 'helper artifacts were not classified');
     ytAssert($acquired->artifacts[0]->role === 'primary' && in_array('--format', $helper->args, true), 'video acquisition strategy failed');

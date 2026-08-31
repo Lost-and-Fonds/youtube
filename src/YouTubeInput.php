@@ -20,6 +20,7 @@ use Stashd\PluginSdk\PluginContext;
 use Stashd\PluginSdk\ResolvedInput;
 use Stashd\PluginSdk\SourceDescriptor;
 use Stashd\PluginSdk\StagedArtifact;
+use Throwable;
 
 final class YouTubeInput implements InputPlugin
 {
@@ -32,7 +33,7 @@ final class YouTubeInput implements InputPlugin
 
         if (in_array($parsed['kind'], ['channel-page', 'channel', 'playlist'], true)) {
             $html = $this->body($this->http('GET', $parsed['canonical']));
-            $canonical = $this->meta($html, 'og:url') ?? $parsed['canonical'];
+            $canonical = $this->https($this->meta($html, 'og:url') ?? $parsed['canonical']);
             $title = $this->meta($html, 'og:title');
             $artwork = $this->meta($html, 'og:image');
 
@@ -59,7 +60,11 @@ final class YouTubeInput implements InputPlugin
             $title = is_string($payload['title'] ?? null) && $payload['title'] !== '' ? $payload['title'] : "YouTube Video {$id}";
         }
 
-        return new ResolvedInput("{$parsed['kind']}:{$id}", $parsed['canonical'], $parsed['kind'], $title);
+        [$sizeBytes, $sizeEstimated] = $parsed['kind'] === 'video' && $this->context->helpers !== null
+            ? $this->sizeEstimate($parsed['canonical'])
+            : [null, false];
+
+        return new ResolvedInput("{$parsed['kind']}:{$id}", $parsed['canonical'], $parsed['kind'], $title, null, null, $sizeBytes, $sizeEstimated);
     }
 
     public function discover(string $inputId, DiscoveryIntent $intent, array $options = []): array
@@ -77,6 +82,17 @@ final class YouTubeInput implements InputPlugin
 
             return $this->filter($this->feed($feed), $options);
         }
+
+        try {
+            return $this->completeWithApi($kind, $id, $options);
+        } catch (Throwable) {
+            return $this->completeWithYtDlp($kind, $id, $options);
+        }
+    }
+
+    /** @return list<DiscoveredItem> */
+    private function completeWithApi(string $kind, string $id, array $options): array
+    {
 
         if ($kind === 'channel') {
             $channel = $this->json($this->http('GET', 'https://www.googleapis.com/youtube/v3/channels?part=contentDetails&id=' . rawurlencode($id), credential: 'youtube-data-api'));
@@ -109,7 +125,86 @@ final class YouTubeInput implements InputPlugin
             $token = is_string($payload['nextPageToken'] ?? null) ? $payload['nextPageToken'] : null;
         } while ($token !== null);
 
-        return $this->filter($this->enrich($items), $options);
+        return $this->filter($this->enrichSizes($this->enrich($items)), $options);
+    }
+
+    /** @return list<DiscoveredItem> */
+    private function completeWithYtDlp(string $kind, string $id, array $options): array
+    {
+        if ($this->context->helpers === null) {
+            throw new RuntimeException('YouTube complete discovery requires an API key or yt-dlp');
+        }
+        $url = $kind === 'playlist'
+            ? 'https://www.youtube.com/playlist?list=' . rawurlencode($id)
+            : 'https://www.youtube.com/channel/' . rawurlencode($id);
+        $result = $this->context->helpers->run('yt-dlp', ['--ignore-errors', '--dump-single-json', '--skip-download', '--no-warnings', '--format', 'bestvideo[height<=1080]+bestaudio/best[height<=1080]', '--extractor-args', 'youtube:player_client=android', $url]);
+
+        if ($result->exitCode !== 0) {
+            throw new RuntimeException('yt-dlp complete discovery failed');
+        }
+        $payload = json_decode($result->stdout, true);
+
+        if (! is_array($payload)) {
+            throw new RuntimeException('yt-dlp returned invalid discovery data');
+        }
+        $items = [];
+
+        foreach (is_array($payload['entries'] ?? null) ? $payload['entries'] : [] as $entry) {
+            if (! is_array($entry) || ! is_string($entry['id'] ?? null) || $entry['id'] === '') {
+                continue;
+            }
+            $videoId = $entry['id'];
+            $published = null;
+
+            if (is_int($entry['timestamp'] ?? null)) {
+                $published = (new DateTimeImmutable('@' . $entry['timestamp']))->setTimezone(new \DateTimeZone('UTC'))->format(DATE_RFC3339);
+            } elseif (is_string($entry['upload_date'] ?? null) && preg_match('/^\d{8}$/', $entry['upload_date']) === 1) {
+                $published = DateTimeImmutable::createFromFormat('!Ymd', $entry['upload_date'], new \DateTimeZone('UTC'))?->format(DATE_RFC3339);
+            }
+            [$sizeBytes, $sizeEstimated] = $this->sizeFromEntry($entry);
+            $items[] = new DiscoveredItem($videoId, 'https://www.youtube.com/watch?v=' . $videoId, (string) ($entry['title'] ?? $videoId), is_string($entry['description'] ?? null) ? $entry['description'] : null, $published, is_string($entry['thumbnail'] ?? null) ? $entry['thumbnail'] : null, is_int($entry['duration'] ?? null) ? $entry['duration'] : null, is_string($entry['live_status'] ?? null) ? $entry['live_status'] : null, $sizeBytes, $sizeEstimated);
+        }
+
+        return $this->filter($items, $options);
+    }
+
+    /** @param list<DiscoveredItem> $items @return list<DiscoveredItem> */
+    private function enrichSizes(array $items): array
+    {
+        if ($this->context->helpers === null || $items === []) return $items;
+        try {
+            $sizes = [];
+            foreach (array_chunk($items, 20) as $batch) {
+                $arguments = ['--ignore-errors', '--dump-json', '--skip-download', '--no-warnings', '--format', 'bestvideo[height<=1080]+bestaudio/best[height<=1080]', '--extractor-args', 'youtube:player_client=android', ...array_map(static fn(DiscoveredItem $item): string => $item->reference, $batch)];
+                $result = $this->context->helpers->run('yt-dlp', $arguments);
+                if ($result->exitCode !== 0) continue;
+                foreach (preg_split('/\R+/', $result->stdout) ?: [] as $line) {
+                    $entry = json_decode(trim($line), true);
+                    if (is_array($entry) && is_string($entry['id'] ?? null)) $sizes[$entry['id']] = $this->sizeFromEntry($entry);
+                }
+            }
+            return array_map(static function (DiscoveredItem $item) use ($sizes): DiscoveredItem {
+                [$sizeBytes, $sizeEstimated] = $sizes[$item->id] ?? [$item->sizeBytes, $item->sizeEstimated];
+                return new DiscoveredItem($item->id, $item->reference, $item->title, $item->description, $item->publishedAt, $item->artworkReference, $item->durationSeconds, $item->kind, $sizeBytes, $sizeEstimated);
+            }, $items);
+        } catch (Throwable) {
+            return $items;
+        }
+    }
+
+    /** @return array{0:?int,1:bool} */
+    private function sizeFromEntry(array $entry): array
+    {
+        $formats = is_array($entry['requested_formats'] ?? null) ? $entry['requested_formats'] : [$entry];
+        $total = 0; $estimated = false;
+        foreach ($formats as $format) {
+            if (! is_array($format)) return [null, false];
+            $exact = $format['filesize'] ?? null; $approx = $format['filesize_approx'] ?? null;
+            $size = is_int($exact) || is_float($exact) ? $exact : $approx;
+            if (! is_int($size) && ! is_float($size)) return [null, false];
+            $total += (int) $size; $estimated = $estimated || ! (is_int($exact) || is_float($exact));
+        }
+        return [$total > 0 ? $total : null, $total > 0 && $estimated];
     }
 
     public function acquire(DiscoveredItem $item, AcquisitionOptions $options): AcquisitionResult
@@ -268,7 +363,10 @@ final class YouTubeInput implements InputPlugin
         $url = 'https://www.youtube.com/oembed?format=json&url=' . rawurlencode('https://www.youtube.com/watch?v=' . $id);
         $payload = $this->json($this->http('GET', $url));
 
-        return [new DiscoveredItem($id, 'https://www.youtube.com/watch?v=' . $id, (string) ($payload['title'] ?? $id), artworkReference: is_string($payload['thumbnail_url'] ?? null) ? $payload['thumbnail_url'] : null)];
+        $reference = 'https://www.youtube.com/watch?v=' . $id;
+        [$sizeBytes, $sizeEstimated] = $this->context->helpers !== null ? $this->sizeEstimate($reference) : [null, false];
+
+        return [new DiscoveredItem($id, $reference, (string) ($payload['title'] ?? $id), artworkReference: is_string($payload['thumbnail_url'] ?? null) ? $payload['thumbnail_url'] : null, sizeBytes: $sizeBytes, sizeEstimated: $sizeEstimated)];
     }
 
     private function item(string $id, array $snippet): DiscoveredItem
@@ -429,5 +527,39 @@ final class YouTubeInput implements InputPlugin
         return match (strtolower(pathinfo($name, PATHINFO_EXTENSION))) {
             'mp4' => 'video/mp4', 'mkv' => 'video/x-matroska', 'webm' => 'video/webm', 'mp3' => 'audio/mpeg', 'm4a' => 'audio/mp4', 'opus' => 'audio/ogg', 'vtt' => 'text/vtt', 'json' => 'application/json', 'jpg', 'jpeg' => 'image/jpeg', 'png' => 'image/png', 'webp' => 'image/webp', default => 'application/octet-stream',
         };
+    }
+
+    /** @return array{0:?int,1:bool} */
+    private function sizeEstimate(string $reference): array
+    {
+        try {
+            $result = $this->context->helpers?->run('yt-dlp', ['--no-playlist', '--no-warnings', '--dump-single-json', '--skip-download', '--format', 'bestvideo[height<=1080]+bestaudio/best[height<=1080]', '--extractor-args', 'youtube:player_client=android', $reference]);
+        } catch (Throwable) {
+            return [null, false];
+        }
+
+        $data = json_decode(trim((string) ($result?->stdout ?? '')), true);
+        if (! is_array($data) && $result !== null) {
+            foreach (array_reverse(preg_split('/\R+/', $result->stdout) ?: []) as $line) {
+                $data = json_decode(trim($line), true);
+                if (is_array($data)) break;
+            }
+        }
+        if ($result === null || $result->exitCode !== 0 || ! is_array($data)) return [null, false];
+        $formats = is_array($data['requested_formats'] ?? null) ? $data['requested_formats'] : [$data];
+        $total = 0;
+        $estimated = false;
+
+        foreach ($formats as $format) {
+            if (! is_array($format)) return [null, false];
+            $exact = $format['filesize'] ?? null;
+            $approx = $format['filesize_approx'] ?? null;
+            $size = is_int($exact) || is_float($exact) ? $exact : $approx;
+            if (! is_int($size) && ! is_float($size)) return [null, false];
+            $total += (int) $size;
+            $estimated = $estimated || ! (is_int($exact) || is_float($exact));
+        }
+
+        return [$total > 0 ? $total : null, $total > 0 && $estimated];
     }
 }
