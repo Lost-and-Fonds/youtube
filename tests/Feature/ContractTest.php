@@ -42,6 +42,10 @@ it('preserves the YouTube provider contract', function (): void {
         public function request(string $method, string $url, array $headers = [], ?string $body = null, ?string $credential = null): HttpResponse
         {
             if (str_contains($url, 'feeds/videos.xml')) {
+                if (str_contains($url, 'playlist_id=')) {
+                    return new HttpResponse(404);
+                }
+
                 return new HttpResponse(200, inlineBody: '<feed xmlns="http://www.w3.org/2005/Atom" xmlns:yt="http://www.youtube.com/xml/schemas/2015"><entry><title>One</title><published>2026-01-01T00:00:00Z</published><yt:videoId>vid1</yt:videoId></entry><entry><title>Two</title><published>2026-01-02T00:00:00Z</published><yt:videoId>vid2</yt:videoId></entry></feed>');
             }
 
@@ -55,6 +59,10 @@ it('preserves the YouTube provider contract', function (): void {
 
             if (str_contains($url, 'channel/') || str_contains($url, '@fixture')) {
                 return new HttpResponse(200, inlineBody: '<meta property="og:title" content="Channel"><script>"channelId":"UCfixture123"</script>');
+            }
+
+            if (str_contains($url, 'googleapis.com/youtube/v3/playlistItems')) {
+                return new HttpResponse(404);
             }
 
             return new HttpResponse(200, inlineBody: '{"items":[],"nextPageToken":null}');
@@ -106,6 +114,8 @@ it('preserves the YouTube provider contract', function (): void {
     ytAssert($plugin->resolve(new SourceDescriptor(['url' => OptionValue::text('https://youtu.be/abc123')]))->title === 'Video', 'video title resolution failed');
     $items = $plugin->discover('UCfixture123', \Stashd\PluginSdk\DiscoveryIntent::Refresh);
     ytAssert(count($items) === 2 && $items[0]->id === 'vid1', 'Atom discovery failed');
+    $playlistItems = $plugin->discover('playlist:PL123', \Stashd\PluginSdk\DiscoveryIntent::Refresh);
+    ytAssert(count($playlistItems) === 1 && $playlistItems[0]->id === 'backfill1', 'playlist refresh fallback failed');
     $backfill = $plugin->discover('UCfixture123', \Stashd\PluginSdk\DiscoveryIntent::Complete);
     ytAssert(count($backfill) === 1 && $backfill[0]->id === 'backfill1', 'yt-dlp complete discovery failed');
     $acquired = $plugin->acquire($items[0], new AcquisitionOptions(MediaKind::Video));

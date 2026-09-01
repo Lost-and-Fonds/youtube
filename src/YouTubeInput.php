@@ -75,12 +75,8 @@ final class YouTubeInput implements InputPlugin
             return $this->video($id);
         }
 
-        if ($intent === DiscoveryIntent::Refresh) {
-            $feed = $kind === 'playlist'
-                ? "https://www.youtube.com/feeds/videos.xml?playlist_id=" . rawurlencode($id)
-                : "https://www.youtube.com/feeds/videos.xml?channel_id=" . rawurlencode($id);
-
-            return $this->filter($this->feed($feed), $options);
+        if ($intent === DiscoveryIntent::Refresh && $kind === 'channel') {
+            return $this->filter($this->feed("https://www.youtube.com/feeds/videos.xml?channel_id=" . rawurlencode($id)), $options);
         }
 
         try {
