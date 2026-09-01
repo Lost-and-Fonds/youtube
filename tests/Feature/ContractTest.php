@@ -88,6 +88,7 @@ it('preserves the YouTube provider contract', function (): void {
     {
         /** @var list<string> */ public array $args = [];
         public int $completeExitCode = 0;
+        public string $completeStderr = '';
         public function run(string $name, array $arguments = []): HelperResult
         {
             ytAssert($name === 'yt-dlp', 'wrong helper');
@@ -96,7 +97,7 @@ it('preserves the YouTube provider contract', function (): void {
             if (in_array('--format', $arguments, true) && (str_contains((string) end($arguments), 'playlist?list=') || str_contains((string) end($arguments), '/channel/'))) {
                 return new HelperResult($this->completeExitCode, json_encode(['entries' => [
                     ['id' => 'backfill1', 'title' => 'Backfill item', 'upload_date' => '20260101', 'filesize_approx' => 1234],
-                ]], JSON_THROW_ON_ERROR));
+                ]], JSON_THROW_ON_ERROR), $this->completeStderr);
             }
 
             return new HelperResult(0, "/staging/youtube-vid1.mp4\n/staging/youtube-vid1.info.json\n/staging/youtube-vid1.jpg\n");
@@ -119,8 +120,9 @@ it('preserves the YouTube provider contract', function (): void {
     $playlistItems = $plugin->discover('playlist:PL123', \Stashd\PluginSdk\DiscoveryIntent::Refresh);
     ytAssert(count($playlistItems) === 1 && $playlistItems[0]->id === 'backfill1', 'playlist refresh fallback failed');
     $helper->completeExitCode = 1;
+    $helper->completeStderr = 'ERROR: [youtube] blocked1: The uploader has not made this video available in your country';
     $backfill = $plugin->discover('UCfixture123', \Stashd\PluginSdk\DiscoveryIntent::Complete);
-    ytAssert(count($backfill) === 1 && $backfill[0]->id === 'backfill1', 'yt-dlp complete discovery failed');
+    ytAssert(count($backfill) === 2 && $backfill[0]->id === 'backfill1' && $backfill[1]->upstreamState === 'region_blocked', 'yt-dlp incomplete discovery item failed');
     $acquired = $plugin->acquire($items[0], new AcquisitionOptions(MediaKind::Video));
     ytAssert(count($acquired->artifacts) === 3, 'helper artifacts were not classified');
     ytAssert($acquired->artifacts[0]->role === 'primary' && in_array('--format', $helper->args, true), 'video acquisition strategy failed');

@@ -165,7 +165,28 @@ final class YouTubeInput implements InputPlugin
             $items[] = new DiscoveredItem($videoId, 'https://www.youtube.com/watch?v=' . $videoId, (string) ($entry['title'] ?? $videoId), is_string($entry['description'] ?? null) ? $entry['description'] : null, $published, is_string($entry['thumbnail'] ?? null) ? $entry['thumbnail'] : null, is_int($entry['duration'] ?? null) ? $entry['duration'] : null, is_string($entry['live_status'] ?? null) ? $entry['live_status'] : null, $sizeBytes, $sizeEstimated);
         }
 
+        foreach ($this->incompleteItems($result->stderr) as $item) {
+            $items[] = $item;
+        }
+
         return $this->filter($items, $options);
+    }
+
+    /** @return list<DiscoveredItem> */
+    private function incompleteItems(string $stderr): array
+    {
+        $items = [];
+
+        foreach (preg_split('/\R+/', $stderr) ?: [] as $line) {
+            if (preg_match('/ERROR: \[youtube\] ([\w-]+): .*?(?:country|region)/i', $line, $match) !== 1) {
+                continue;
+            }
+            $id = $match[1];
+
+            $items[] = new DiscoveredItem($id, 'https://www.youtube.com/watch?v=' . $id, "Unavailable YouTube item ({$id})", upstreamState: 'region_blocked');
+        }
+
+        return $items;
     }
 
     /** @param list<DiscoveredItem> $items @return list<DiscoveredItem> */
@@ -198,7 +219,7 @@ final class YouTubeInput implements InputPlugin
             return array_map(static function (DiscoveredItem $item) use ($sizes): DiscoveredItem {
                 [$sizeBytes, $sizeEstimated] = $sizes[$item->id] ?? [$item->sizeBytes, $item->sizeEstimated];
 
-                return new DiscoveredItem($item->id, $item->reference, $item->title, $item->description, $item->publishedAt, $item->artworkReference, $item->durationSeconds, $item->kind, $sizeBytes, $sizeEstimated);
+                return new DiscoveredItem($item->id, $item->reference, $item->title, $item->description, $item->publishedAt, $item->artworkReference, $item->durationSeconds, $item->kind, $sizeBytes, $sizeEstimated, $item->upstreamState);
             }, $items);
         } catch (Throwable) {
             return $items;
