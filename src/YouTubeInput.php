@@ -171,20 +171,33 @@ final class YouTubeInput implements InputPlugin
     /** @param list<DiscoveredItem> $items @return list<DiscoveredItem> */
     private function enrichSizes(array $items): array
     {
-        if ($this->context->helpers === null || $items === []) return $items;
+        if ($this->context->helpers === null || $items === []) {
+            return $items;
+        }
+
         try {
             $sizes = [];
+
             foreach (array_chunk($items, 20) as $batch) {
                 $arguments = ['--ignore-errors', '--dump-json', '--skip-download', '--no-warnings', '--format', 'bestvideo[height<=1080]+bestaudio/best[height<=1080]', '--extractor-args', 'youtube:player_client=android', ...array_map(static fn(DiscoveredItem $item): string => $item->reference, $batch)];
                 $result = $this->context->helpers->run('yt-dlp', $arguments);
-                if ($result->exitCode !== 0) continue;
+
+                if ($result->exitCode !== 0) {
+                    continue;
+                }
+
                 foreach (preg_split('/\R+/', $result->stdout) ?: [] as $line) {
                     $entry = json_decode(trim($line), true);
-                    if (is_array($entry) && is_string($entry['id'] ?? null)) $sizes[$entry['id']] = $this->sizeFromEntry($entry);
+
+                    if (is_array($entry) && is_string($entry['id'] ?? null)) {
+                        $sizes[$entry['id']] = $this->sizeFromEntry($entry);
+                    }
                 }
             }
+
             return array_map(static function (DiscoveredItem $item) use ($sizes): DiscoveredItem {
                 [$sizeBytes, $sizeEstimated] = $sizes[$item->id] ?? [$item->sizeBytes, $item->sizeEstimated];
+
                 return new DiscoveredItem($item->id, $item->reference, $item->title, $item->description, $item->publishedAt, $item->artworkReference, $item->durationSeconds, $item->kind, $sizeBytes, $sizeEstimated);
             }, $items);
         } catch (Throwable) {
@@ -196,14 +209,24 @@ final class YouTubeInput implements InputPlugin
     private function sizeFromEntry(array $entry): array
     {
         $formats = is_array($entry['requested_formats'] ?? null) ? $entry['requested_formats'] : [$entry];
-        $total = 0; $estimated = false;
+        $total = 0;
+        $estimated = false;
+
         foreach ($formats as $format) {
-            if (! is_array($format)) return [null, false];
-            $exact = $format['filesize'] ?? null; $approx = $format['filesize_approx'] ?? null;
+            if (! is_array($format)) {
+                return [null, false];
+            }
+            $exact = $format['filesize'] ?? null;
+            $approx = $format['filesize_approx'] ?? null;
             $size = is_int($exact) || is_float($exact) ? $exact : $approx;
-            if (! is_int($size) && ! is_float($size)) return [null, false];
-            $total += (int) $size; $estimated = $estimated || ! (is_int($exact) || is_float($exact));
+
+            if (! is_int($size) && ! is_float($size)) {
+                return [null, false];
+            }
+            $total += (int) $size;
+            $estimated = $estimated || ! (is_int($exact) || is_float($exact));
         }
+
         return [$total > 0 ? $total : null, $total > 0 && $estimated];
     }
 
@@ -539,23 +562,35 @@ final class YouTubeInput implements InputPlugin
         }
 
         $data = json_decode(trim((string) ($result?->stdout ?? '')), true);
+
         if (! is_array($data) && $result !== null) {
             foreach (array_reverse(preg_split('/\R+/', $result->stdout) ?: []) as $line) {
                 $data = json_decode(trim($line), true);
-                if (is_array($data)) break;
+
+                if (is_array($data)) {
+                    break;
+                }
             }
         }
-        if ($result === null || $result->exitCode !== 0 || ! is_array($data)) return [null, false];
+
+        if ($result === null || $result->exitCode !== 0 || ! is_array($data)) {
+            return [null, false];
+        }
         $formats = is_array($data['requested_formats'] ?? null) ? $data['requested_formats'] : [$data];
         $total = 0;
         $estimated = false;
 
         foreach ($formats as $format) {
-            if (! is_array($format)) return [null, false];
+            if (! is_array($format)) {
+                return [null, false];
+            }
             $exact = $format['filesize'] ?? null;
             $approx = $format['filesize_approx'] ?? null;
             $size = is_int($exact) || is_float($exact) ? $exact : $approx;
-            if (! is_int($size) && ! is_float($size)) return [null, false];
+
+            if (! is_int($size) && ! is_float($size)) {
+                return [null, false];
+            }
             $total += (int) $size;
             $estimated = $estimated || ! (is_int($exact) || is_float($exact));
         }
