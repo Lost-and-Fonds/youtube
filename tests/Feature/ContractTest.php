@@ -54,7 +54,7 @@ it('preserves the YouTube provider contract', function (): void {
             }
 
             if (str_contains($url, 'playlist')) {
-                return new HttpResponse(200, inlineBody: '<meta property="og:title" content="Playlist">');
+                return new HttpResponse(200, inlineBody: '<meta property="og:title" content="Playlist"><script>"avatar":{"avatarViewModel":{"image":{"sources":[{"url":"https://yt3.ggpht.com/channel-avatar"}]}}}</script>');
             }
 
             if (str_contains($url, 'channel/') || str_contains($url, '@fixture')) {
@@ -111,6 +111,7 @@ it('preserves the YouTube provider contract', function (): void {
     $channel = $plugin->resolve(new SourceDescriptor(['url' => OptionValue::text('https://www.youtube.com/@fixture')]));
     ytAssert($channel->id === 'UCfixture123' && $channel->title === 'Channel', 'handle resolution failed');
     ytAssert($plugin->resolve(new SourceDescriptor(['url' => OptionValue::text('https://www.youtube.com/playlist?list=PL123')]))->title === 'Playlist', 'playlist title resolution failed');
+    ytAssert($plugin->resolve(new SourceDescriptor(['url' => OptionValue::text('https://www.youtube.com/playlist?list=PL123')]))->artworkReference === 'https://yt3.ggpht.com/channel-avatar', 'playlist channel avatar resolution failed');
     ytAssert($plugin->resolve(new SourceDescriptor(['url' => OptionValue::text('https://youtu.be/abc123')]))->title === 'Video', 'video title resolution failed');
     $items = $plugin->discover('UCfixture123', \Stashd\PluginSdk\DiscoveryIntent::Refresh);
     ytAssert(count($items) === 2 && $items[0]->id === 'vid1', 'Atom discovery failed');

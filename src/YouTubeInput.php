@@ -35,7 +35,9 @@ final class YouTubeInput implements InputPlugin
             $html = $this->body($this->http('GET', $parsed['canonical']));
             $canonical = $this->https($this->meta($html, 'og:url') ?? $parsed['canonical']);
             $title = $this->meta($html, 'og:title');
-            $artwork = $this->meta($html, 'og:image');
+            $artwork = $parsed['kind'] === 'playlist'
+                ? ($this->playlistAvatar($html) ?? $this->meta($html, 'og:image'))
+                : $this->meta($html, 'og:image');
 
             if ($parsed['kind'] === 'channel-page') {
                 preg_match('~/channel/(UC[\\w-]+)~', $canonical, $match);
@@ -494,6 +496,13 @@ final class YouTubeInput implements InputPlugin
     private function meta(string $html, string $name): ?string
     {
         return preg_match('/<meta[^>]+property=["\']' . preg_quote($name, '/') . '["\'][^>]+content=["\']([^"\']+)/i', $html, $m) === 1 ? html_entity_decode($m[1]) : null;
+    }
+
+    private function playlistAvatar(string $html): ?string
+    {
+        return preg_match('/"avatar".*?"url":"([^"]+)/s', $html, $m) === 1
+            ? html_entity_decode(str_replace('\\u0026', '&', $m[1]))
+            : null;
     }
 
     private function bool(array $options, string $key): bool
