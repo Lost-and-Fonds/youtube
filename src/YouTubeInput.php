@@ -137,17 +137,19 @@ final class YouTubeInput implements InputPlugin
             : 'https://www.youtube.com/channel/' . rawurlencode($id);
         $result = $this->context->helpers->run('yt-dlp', ['--ignore-errors', '--dump-single-json', '--skip-download', '--no-warnings', '--format', 'bestvideo[height<=1080]+bestaudio/best[height<=1080]', '--extractor-args', 'youtube:player_client=android', $url]);
 
-        if ($result->exitCode !== 0) {
-            throw new RuntimeException('yt-dlp complete discovery failed');
-        }
         $payload = json_decode($result->stdout, true);
 
         if (! is_array($payload)) {
             throw new RuntimeException('yt-dlp returned invalid discovery data');
         }
+        $entries = is_array($payload['entries'] ?? null) ? $payload['entries'] : [];
+
+        if ($result->exitCode !== 0 && $entries === []) {
+            throw new RuntimeException('yt-dlp complete discovery failed');
+        }
         $items = [];
 
-        foreach (is_array($payload['entries'] ?? null) ? $payload['entries'] : [] as $entry) {
+        foreach ($entries as $entry) {
             if (! is_array($entry) || ! is_string($entry['id'] ?? null) || $entry['id'] === '') {
                 continue;
             }
