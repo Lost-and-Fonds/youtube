@@ -135,7 +135,7 @@ final class YouTubeInput implements InputPlugin
         $url = $kind === 'playlist'
             ? 'https://www.youtube.com/playlist?list=' . rawurlencode($id)
             : 'https://www.youtube.com/channel/' . rawurlencode($id);
-        $result = $this->context->helpers->run('yt-dlp', ['--ignore-errors', '--dump-single-json', '--skip-download', '--no-warnings', '--format', 'bestvideo[height<=1080]+bestaudio/best[height<=1080]', '--extractor-args', 'youtube:player_client=android', $url]);
+        $result = $this->context->helpers->run('yt-dlp', ['--ignore-errors', '--dump-single-json', '--skip-download', '--no-warnings', '--format', 'bestvideo[height<=1080]+bestaudio/best[height<=1080]', $url]);
 
         $payload = json_decode($result->stdout, true);
 
@@ -200,7 +200,7 @@ final class YouTubeInput implements InputPlugin
             $sizes = [];
 
             foreach (array_chunk($items, 20) as $batch) {
-                $arguments = ['--ignore-errors', '--dump-json', '--skip-download', '--no-warnings', '--format', 'bestvideo[height<=1080]+bestaudio/best[height<=1080]', '--extractor-args', 'youtube:player_client=android', ...array_map(static fn(DiscoveredItem $item): string => $item->reference, $batch)];
+                $arguments = ['--ignore-errors', '--dump-json', '--skip-download', '--no-warnings', '--format', 'bestvideo[height<=1080]+bestaudio/best[height<=1080]', ...array_map(static fn(DiscoveredItem $item): string => $item->reference, $batch)];
                 $result = $this->context->helpers->run('yt-dlp', $arguments);
 
                 if ($result->exitCode !== 0) {
@@ -257,7 +257,7 @@ final class YouTubeInput implements InputPlugin
             throw new RuntimeException('acquisition capabilities are unavailable');
         }
         $output = 'youtube-' . preg_replace('/[^A-Za-z0-9_-]/', '_', $item->id);
-        $args = ['--no-playlist', '--newline', '--no-warnings', '--restrict-filenames', '--extractor-args', 'youtube:player_client=android', '--ffmpeg-location', '/plugin/stashd-plugin/helpers', '--print', 'after_move:filepath', '--output', $output . '.%(ext)s', '--write-info-json', '--write-thumbnail'];
+        $args = ['--no-playlist', '--newline', '--no-warnings', '--restrict-filenames', '--ffmpeg-location', '/plugin/stashd-plugin/helpers', '--print', 'after_move:filepath', '--output', $output . '.%(ext)s', '--write-info-json', '--write-thumbnail'];
 
         if ($options->mediaKind === MediaKind::Audio) {
             array_push($args, '--extract-audio', '--audio-format', 'mp3', '--audio-quality', '128K');
@@ -584,7 +584,7 @@ final class YouTubeInput implements InputPlugin
     private function sizeEstimate(string $reference): array
     {
         try {
-            $result = $this->context->helpers?->run('yt-dlp', ['--no-playlist', '--no-warnings', '--dump-single-json', '--skip-download', '--format', 'bestvideo[height<=1080]+bestaudio/best[height<=1080]', '--extractor-args', 'youtube:player_client=android', $reference]);
+            $result = $this->context->helpers?->run('yt-dlp', ['--no-playlist', '--no-warnings', '--dump-single-json', '--skip-download', '--format', 'bestvideo[height<=1080]+bestaudio/best[height<=1080]', $reference]);
         } catch (Throwable) {
             return [null, false];
         }
