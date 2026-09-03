@@ -69,16 +69,13 @@ final class YouTubeInput implements InputPlugin
         return new ResolvedInput("{$parsed['kind']}:{$id}", $parsed['canonical'], $parsed['kind'], $title, null, null, $sizeBytes, $sizeEstimated);
     }
 
+    /** @param list<InputOption> $options @return list<DiscoveredItem> */
     public function discover(string $inputId, DiscoveryIntent $intent, array $options = []): array
     {
         [$kind, $id] = str_contains($inputId, ':') ? explode(':', $inputId, 2) : ['channel', $inputId];
 
         if ($kind === 'video') {
             return $this->video($id);
-        }
-
-        if ($intent === DiscoveryIntent::Refresh && $kind === 'channel') {
-            return $this->filter($this->feed("https://www.youtube.com/feeds/videos.xml?channel_id=" . rawurlencode($id)), $options);
         }
 
         try {
@@ -89,12 +86,17 @@ final class YouTubeInput implements InputPlugin
     }
 
     /** @return list<DiscoveredItem> */
+    /** @param list<InputOption> $options @return list<DiscoveredItem> */
     private function completeWithApi(string $kind, string $id, array $options): array
     {
 
         if ($kind === 'channel') {
             $channel = $this->json($this->http('GET', 'https://www.googleapis.com/youtube/v3/channels?part=contentDetails&id=' . rawurlencode($id), credential: 'youtube-data-api'));
-            $id = (string) ($channel['items'][0]['contentDetails']['relatedPlaylists']['uploads'] ?? '');
+            $channelItems = is_array($channel['items'] ?? null) ? $channel['items'] : [];
+            $channelItem = is_array($channelItems[0] ?? null) ? $channelItems[0] : [];
+            $contentDetails = is_array($channelItem['contentDetails'] ?? null) ? $channelItem['contentDetails'] : [];
+            $relatedPlaylists = is_array($contentDetails['relatedPlaylists'] ?? null) ? $contentDetails['relatedPlaylists'] : [];
+            $id = is_string($relatedPlaylists['uploads'] ?? null) ? $relatedPlaylists['uploads'] : '';
 
             if ($id === '') {
                 throw new RuntimeException('channel uploads playlist was not found');
@@ -112,9 +114,16 @@ final class YouTubeInput implements InputPlugin
             }
             $payload = $this->json($this->http('GET', $url, credential: 'youtube-data-api'));
 
-            foreach ($payload['items'] ?? [] as $entry) {
+            $entries = is_array($payload['items'] ?? null) ? $payload['items'] : [];
+
+            foreach ($entries as $entry) {
+                if (! is_array($entry)) {
+                    continue;
+                }
                 $snippet = is_array($entry['snippet'] ?? null) ? $entry['snippet'] : [];
-                $videoId = $kind === 'playlist' ? ($snippet['resourceId']['videoId'] ?? null) : ($entry['id']['videoId'] ?? null);
+                $resourceId = is_array($snippet['resourceId'] ?? null) ? $snippet['resourceId'] : [];
+                $entryId = is_array($entry['id'] ?? null) ? $entry['id'] : [];
+                $videoId = $kind === 'playlist' ? ($resourceId['videoId'] ?? null) : ($entryId['videoId'] ?? null);
 
                 if (is_string($videoId) && $videoId !== '') {
                     $items[] = $this->item($videoId, $snippet);
@@ -127,6 +136,7 @@ final class YouTubeInput implements InputPlugin
     }
 
     /** @return list<DiscoveredItem> */
+    /** @param list<InputOption> $options @return list<DiscoveredItem> */
     private function completeWithYtDlp(string $kind, string $id, array $options): array
     {
         if ($this->context->helpers === null) {
@@ -135,7 +145,7 @@ final class YouTubeInput implements InputPlugin
         $url = $kind === 'playlist'
             ? 'https://www.youtube.com/playlist?list=' . rawurlencode($id)
             : 'https://www.youtube.com/channel/' . rawurlencode($id);
-        $result = $this->context->helpers->run('yt-dlp', ['--ignore-errors', '--dump-single-json', '--skip-download', '--no-warnings', '--format', 'bestvideo[height<=1080]+bestaudio/best[height<=1080]', $url]);
+        $result = $this->context->helpers->run('yt-dlp', ['--ignore-errors', '--flat-playlist', '--dump-single-json', '--skip-download', '--no-warnings', $url]);
 
         $payload = json_decode($result->stdout, true);
 
@@ -159,7 +169,8 @@ final class YouTubeInput implements InputPlugin
             if (is_int($entry['timestamp'] ?? null)) {
                 $published = (new DateTimeImmutable('@' . $entry['timestamp']))->setTimezone(new \DateTimeZone('UTC'))->format(DATE_RFC3339);
             } elseif (is_string($entry['upload_date'] ?? null) && preg_match('/^\d{8}$/', $entry['upload_date']) === 1) {
-                $published = DateTimeImmutable::createFromFormat('!Ymd', $entry['upload_date'], new \DateTimeZone('UTC'))?->format(DATE_RFC3339);
+                $date = DateTimeImmutable::createFromFormat('!Ymd', $entry['upload_date'], new \DateTimeZone('UTC'));
+                $published = $date instanceof DateTimeImmutable ? $date->format(DATE_RFC3339) : null;
             }
             [$sizeBytes, $sizeEstimated] = $this->sizeFromEntry($entry);
             $items[] = new DiscoveredItem($videoId, 'https://www.youtube.com/watch?v=' . $videoId, (string) ($entry['title'] ?? $videoId), is_string($entry['description'] ?? null) ? $entry['description'] : null, $published, is_string($entry['thumbnail'] ?? null) ? $entry['thumbnail'] : null, is_int($entry['duration'] ?? null) ? $entry['duration'] : null, is_string($entry['live_status'] ?? null) ? $entry['live_status'] : null, $sizeBytes, $sizeEstimated);
@@ -198,28 +209,38 @@ final class YouTubeInput implements InputPlugin
 
         try {
             $sizes = [];
+            $batches = array_chunk($items, 20);
 
-            foreach (array_chunk($items, 20) as $batch) {
-                $arguments = ['--ignore-errors', '--dump-json', '--skip-download', '--no-warnings', '--format', 'bestvideo[height<=1080]+bestaudio/best[height<=1080]', ...array_map(static fn(DiscoveredItem $item): string => $item->reference, $batch)];
+            foreach ($batches as $index => $batch) {
+                $this->context->progress->report(sprintf('Inspecting video metadata (%d of %d)', $index + 1, count($batches)), $index / max(1, count($batches)));
+                $arguments = ['--ignore-errors', '--dump-json', '--skip-download', '--no-warnings', '--format', 'bestvideo+bestaudio/best', ...array_map(static fn(DiscoveredItem $item): string => $item->reference, $batch)];
                 $result = $this->context->helpers->run('yt-dlp', $arguments);
-
-                if ($result->exitCode !== 0) {
-                    continue;
-                }
 
                 foreach (preg_split('/\R+/', $result->stdout) ?: [] as $line) {
                     $entry = json_decode(trim($line), true);
 
                     if (is_array($entry) && is_string($entry['id'] ?? null)) {
-                        $sizes[$entry['id']] = $this->sizeFromEntry($entry);
+                        $sizes[$entry['id']] = $entry;
                     }
                 }
+                $this->context->progress->report(sprintf('Inspected video metadata (%d of %d)', $index + 1, count($batches)), ($index + 1) / max(1, count($batches)));
             }
 
-            return array_map(static function (DiscoveredItem $item) use ($sizes): DiscoveredItem {
-                [$sizeBytes, $sizeEstimated] = $sizes[$item->id] ?? [$item->sizeBytes, $item->sizeEstimated];
+            return array_map(function (DiscoveredItem $item) use ($sizes): DiscoveredItem {
+                $metadata = $sizes[$item->id] ?? [];
+                [$sizeBytes, $sizeEstimated] = $metadata === [] ? [$item->sizeBytes, $item->sizeEstimated] : $this->sizeFromEntry($metadata);
+                $published = $item->publishedAt;
 
-                return new DiscoveredItem($item->id, $item->reference, $item->title, $item->description, $item->publishedAt, $item->artworkReference, $item->durationSeconds, $item->kind, $sizeBytes, $sizeEstimated, $item->upstreamState);
+                if (is_int($metadata['timestamp'] ?? null)) {
+                    $published = (new DateTimeImmutable('@' . $metadata['timestamp']))->setTimezone(new \DateTimeZone('UTC'))->format(DATE_RFC3339);
+                } elseif (is_string($metadata['upload_date'] ?? null) && preg_match('/^\d{8}$/', $metadata['upload_date']) === 1) {
+                    $date = DateTimeImmutable::createFromFormat('!Ymd', $metadata['upload_date'], new \DateTimeZone('UTC'));
+                    $published = $date instanceof DateTimeImmutable ? $date->format(DATE_RFC3339) : null;
+                }
+
+                $duration = is_int($metadata['duration'] ?? null) || is_float($metadata['duration'] ?? null) ? (int) $metadata['duration'] : $item->durationSeconds;
+
+                return new DiscoveredItem($item->id, $item->reference, (string) ($metadata['title'] ?? $item->title), is_string($metadata['description'] ?? null) ? $metadata['description'] : $item->description, $published, is_string($metadata['thumbnail'] ?? null) ? $metadata['thumbnail'] : $item->artworkReference, $duration, is_string($metadata['live_status'] ?? null) ? $metadata['live_status'] : $item->kind, $sizeBytes, $sizeEstimated, $item->upstreamState);
             }, $items);
         } catch (Throwable) {
             return $items;
@@ -257,19 +278,26 @@ final class YouTubeInput implements InputPlugin
             throw new RuntimeException('acquisition capabilities are unavailable');
         }
         $output = 'youtube-' . preg_replace('/[^A-Za-z0-9_-]/', '_', $item->id);
-        $args = ['--no-playlist', '--newline', '--no-warnings', '--restrict-filenames', '--ffmpeg-location', '/plugin/stashd-plugin/helpers', '--print', 'after_move:filepath', '--output', $output . '.%(ext)s', '--write-info-json', '--write-thumbnail'];
+        $args = ['--no-playlist', '--newline', '--no-warnings', '--progress', '--restrict-filenames', '--progress-template', 'download:progress=%(progress._percent_str)s', '--ffmpeg-location', '/plugin/stashd-plugin/helpers', '--print', 'after_move:filepath', '--output', $output . '.%(ext)s', '--write-info-json', '--write-thumbnail'];
 
         if ($options->mediaKind === MediaKind::Audio) {
             array_push($args, '--extract-audio', '--audio-format', 'mp3', '--audio-quality', '128K');
         } else {
-            array_push($args, '--format', 'bestvideo[height<=1080]+bestaudio/best[height<=1080]', '--merge-output-format', 'mp4');
+            array_push($args, '--format', 'bestvideo+bestaudio/best', '--merge-output-format', 'mp4');
         }
 
         if ($this->bool($options->options, 'include_captions')) {
             array_push($args, '--write-subs', '--sub-format', 'vtt', '--sub-langs', $this->text($options->options, 'caption_languages') ?? 'en');
         }
         $args[] = $item->reference;
-        $result = $this->context->helpers->run('yt-dlp', $args);
+        $result = $this->context->helpers->run('yt-dlp', $args, function (string $channel, string $buffer): void {
+            if (preg_match('/progress=\s*([0-9]+(?:\.[0-9]+)?)%/', $buffer, $match) !== 1) {
+                return;
+            }
+
+            $fraction = min(1.0, max(0.0, (float) $match[1] / 100));
+            $this->context->progress->report('Downloading', $fraction);
+        });
 
         if ($result->exitCode !== 0) {
             throw new RuntimeException($result->exitCode === 124 ? 'acquisition timed out' : 'acquisition helper failed');
@@ -370,35 +398,6 @@ final class YouTubeInput implements InputPlugin
     private function https(string $url): string
     {
         return preg_replace('~^http://~i', 'https://', $url) ?: $url;
-    }
-
-    /** @return list<DiscoveredItem> */
-    private function feed(string $url): array
-    {
-        $xml = $this->body($this->http('GET', $url));
-        $root = simplexml_load_string($xml, \SimpleXMLElement::class, LIBXML_NONET | LIBXML_NOCDATA);
-
-        if ($root === false) {
-            throw new RuntimeException('YouTube feed was invalid');
-        }
-        $root->registerXPathNamespace('a', 'http://www.w3.org/2005/Atom');
-        $items = [];
-
-        foreach ($root->xpath('//a:entry') ?: [] as $entry) {
-            $entry->registerXPathNamespace('yt', 'http://www.youtube.com/xml/schemas/2015');
-            $entry->registerXPathNamespace('media', 'http://search.yahoo.com/mrss/');
-            $id = (string) (($entry->xpath('yt:videoId')[0] ?? ''));
-
-            if ($id === '') {
-                continue;
-            }
-            $description = (string) (($entry->xpath('media:group/media:description')[0] ?? ''));
-            $thumbnail = $entry->xpath('media:group/media:thumbnail');
-            $artwork = isset($thumbnail[0]['url']) ? (string) $thumbnail[0]['url'] : null;
-            $items[] = new DiscoveredItem($id, 'https://www.youtube.com/watch?v=' . $id, (string) ($entry->title ?? $id), $description !== '' ? $description : null, (string) ($entry->published ?? null), $artwork);
-        }
-
-        return $items;
     }
 
     /** @return list<DiscoveredItem> */
@@ -584,7 +583,7 @@ final class YouTubeInput implements InputPlugin
     private function sizeEstimate(string $reference): array
     {
         try {
-            $result = $this->context->helpers?->run('yt-dlp', ['--no-playlist', '--no-warnings', '--dump-single-json', '--skip-download', '--format', 'bestvideo[height<=1080]+bestaudio/best[height<=1080]', $reference]);
+            $result = $this->context->helpers?->run('yt-dlp', ['--no-playlist', '--no-warnings', '--dump-single-json', '--skip-download', '--format', 'bestvideo+bestaudio/best', $reference]);
         } catch (Throwable) {
             return [null, false];
         }

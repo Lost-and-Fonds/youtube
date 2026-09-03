@@ -11,6 +11,7 @@ use Stashd\PluginSdk\InputOption;
 use Stashd\PluginSdk\MediaKind;
 use Stashd\PluginSdk\OptionValue;
 use Stashd\PluginSdk\PluginContext;
+use Stashd\PluginSdk\ProgressReporter;
 use Stashd\PluginSdk\StagedArtifact;
 use Stashd\PluginSdk\StagingArea;
 use Stashd\PluginSdk\SourceDescriptor;
@@ -89,25 +90,47 @@ it('preserves the YouTube provider contract', function (): void {
         /** @var list<string> */ public array $args = [];
         public int $completeExitCode = 0;
         public string $completeStderr = '';
-        public function run(string $name, array $arguments = []): HelperResult
+        public function run(string $name, array $arguments = [], ?callable $onOutput = null): HelperResult
         {
             ytAssert($name === 'yt-dlp', 'wrong helper');
             $this->args = $arguments;
 
-            if (in_array('--format', $arguments, true) && (str_contains((string) end($arguments), 'playlist?list=') || str_contains((string) end($arguments), '/channel/'))) {
+            if ($onOutput !== null && in_array('--progress-template', $arguments, true)) {
+                $onOutput('err', "download:progress=35.0%\n");
+            }
+
+            if (str_contains((string) end($arguments), 'playlist?list=')) {
                 return new HelperResult($this->completeExitCode, json_encode(['entries' => [
                     ['id' => 'backfill1', 'title' => 'Backfill item', 'upload_date' => '20260101', 'filesize_approx' => 1234],
                 ]], JSON_THROW_ON_ERROR), $this->completeStderr);
+            }
+
+            if (str_contains((string) end($arguments), '/channel/')) {
+                $entries = $this->completeExitCode === 0
+                    ? [['id' => 'vid1', 'title' => 'One'], ['id' => 'vid2', 'title' => 'Two']]
+                    : [['id' => 'backfill1', 'title' => 'Backfill item', 'upload_date' => '20260101', 'filesize_approx' => 1234]];
+
+                return new HelperResult($this->completeExitCode, json_encode(['entries' => $entries], JSON_THROW_ON_ERROR), $this->completeStderr);
             }
 
             return new HelperResult(0, "/staging/youtube-vid1.mp4\n/staging/youtube-vid1.info.json\n/staging/youtube-vid1.jpg\n");
         }
     }
 
+    final class YtProgress implements ProgressReporter
+    {
+        /** @var list<float|null> */ public array $fractions = [];
+        public function report(string $stage, ?float $fraction = null): void
+        {
+            $this->fractions[] = $fraction;
+        }
+    }
+
     $http = new YtHttp();
     $stage = new YtStage();
     $helper = new YtHelper();
-    $plugin = new YouTubeInput(new PluginContext(http: $http, staging: $stage, helpers: $helper));
+    $progress = new YtProgress();
+    $plugin = new YouTubeInput(new PluginContext(http: $http, progress: $progress, staging: $stage, helpers: $helper));
     ytAssert($plugin->resolve(new SourceDescriptor(['url' => OptionValue::text('https://youtu.be/abc123')]))->id === 'video:abc123', 'short URL identity failed');
     ytAssert($plugin->resolve(new SourceDescriptor(['url' => OptionValue::text('https://www.youtube.com/playlist?list=PL123')]))->id === 'playlist:PL123', 'playlist identity failed');
     $channel = $plugin->resolve(new SourceDescriptor(['url' => OptionValue::text('https://www.youtube.com/@fixture')]));
@@ -128,5 +151,6 @@ it('preserves the YouTube provider contract', function (): void {
     ytAssert($acquired->artifacts[0]->role === 'primary' && in_array('--format', $helper->args, true), 'video acquisition strategy failed');
     $ffmpegLocation = array_search('--ffmpeg-location', $helper->args, true);
     ytAssert($ffmpegLocation !== false && ($helper->args[$ffmpegLocation + 1] ?? null) === '/plugin/stashd-plugin/helpers', 'bundled ffmpeg path was not configured');
+    ytAssert(in_array(0.35, $progress->fractions, true), 'yt-dlp progress was not translated');
     expect(true)->toBeTrue();
 });
