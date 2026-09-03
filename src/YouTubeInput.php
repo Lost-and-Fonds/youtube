@@ -78,6 +78,10 @@ final class YouTubeInput implements InputPlugin
             return $this->video($id);
         }
 
+        if ($intent === DiscoveryIntent::Refresh && $kind === 'channel') {
+            return $this->filter($this->feed('https://www.youtube.com/feeds/videos.xml?channel_id=' . rawurlencode($id)), $options);
+        }
+
         try {
             return $this->completeWithApi($kind, $id, $options);
         } catch (Throwable) {
@@ -398,6 +402,35 @@ final class YouTubeInput implements InputPlugin
     private function https(string $url): string
     {
         return preg_replace('~^http://~i', 'https://', $url) ?: $url;
+    }
+
+    /** @return list<DiscoveredItem> */
+    private function feed(string $url): array
+    {
+        $xml = $this->body($this->http('GET', $url));
+        $root = simplexml_load_string($xml, \SimpleXMLElement::class, LIBXML_NONET | LIBXML_NOCDATA);
+
+        if ($root === false) {
+            throw new RuntimeException('YouTube feed was invalid');
+        }
+        $root->registerXPathNamespace('a', 'http://www.w3.org/2005/Atom');
+        $items = [];
+
+        foreach ($root->xpath('//a:entry') ?: [] as $entry) {
+            $entry->registerXPathNamespace('yt', 'http://www.youtube.com/xml/schemas/2015');
+            $entry->registerXPathNamespace('media', 'http://search.yahoo.com/mrss/');
+            $id = (string) (($entry->xpath('yt:videoId')[0] ?? ''));
+
+            if ($id === '') {
+                continue;
+            }
+            $description = (string) (($entry->xpath('media:group/media:description')[0] ?? ''));
+            $thumbnail = $entry->xpath('media:group/media:thumbnail');
+            $artwork = isset($thumbnail[0]['url']) ? (string) $thumbnail[0]['url'] : null;
+            $items[] = new DiscoveredItem($id, 'https://www.youtube.com/watch?v=' . $id, (string) ($entry->title ?? $id), $description !== '' ? $description : null, (string) ($entry->published ?? null), $artwork);
+        }
+
+        return $items;
     }
 
     /** @return list<DiscoveredItem> */
