@@ -25,7 +25,8 @@
   "input_options": [
     {"key": "include_shorts", "label": "Include Shorts", "type": "bool", "default": false},
     {"key": "include_live", "label": "Include live and premieres", "type": "bool", "default": false},
-    {"key": "include_captions", "label": "Include captions", "type": "bool", "default": false},
+    {"key": "include_captions", "label": "Include creator captions", "type": "bool", "default": true},
+    {"key": "include_auto_captions", "label": "Include automatic captions", "type": "bool", "default": false},
     {"key": "caption_languages", "label": "Caption languages", "type": "text", "default": "en"}
   ],
   "operations": {"complete": ["credential:youtube-data-api", "helper:yt-dlp"], "acquire": ["helper:yt-dlp"]}

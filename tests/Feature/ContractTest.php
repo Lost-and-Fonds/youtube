@@ -151,6 +151,9 @@ it('preserves the YouTube provider contract', function (): void {
     ytAssert($acquired->artifacts[0]->role === 'primary' && in_array('--format', $helper->args, true), 'video acquisition strategy failed');
     $ffmpegLocation = array_search('--ffmpeg-location', $helper->args, true);
     ytAssert($ffmpegLocation !== false && ($helper->args[$ffmpegLocation + 1] ?? null) === '/plugin/stashd-plugin/helpers', 'bundled ffmpeg path was not configured');
+    ytAssert(in_array('--write-subs', $helper->args, true) && ! in_array('--write-auto-subs', $helper->args, true), 'creator captions were not enabled by default');
     ytAssert(in_array(0.35, $progress->fractions, true), 'yt-dlp progress was not translated');
+    $plugin->acquire($items[0], new AcquisitionOptions(MediaKind::Video, [new InputOption('include_auto_captions', OptionValue::boolean(true))]));
+    ytAssert(in_array('--write-subs', $helper->args, true) && in_array('--write-auto-subs', $helper->args, true), 'automatic captions opt-in was not passed to yt-dlp');
     expect(true)->toBeTrue();
 });

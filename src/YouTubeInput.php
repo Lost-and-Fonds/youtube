@@ -21,6 +21,7 @@ use Stashd\PluginSdk\ResolvedInput;
 use Stashd\PluginSdk\SourceDescriptor;
 use Stashd\PluginSdk\StagedArtifact;
 use Throwable;
+use Uri\Rfc3986\Uri;
 
 final class YouTubeInput implements InputPlugin
 {
@@ -47,7 +48,7 @@ final class YouTubeInput implements InputPlugin
                 if ($id === null) {
                     throw new RuntimeException('channel identity was not found');
                 }
-                $canonical = "https://www.youtube.com/channel/{$id}";
+                $canonical = $this->url("https://www.youtube.com/channel/{$id}");
             } else {
                 $id = $parsed['id'];
             }
@@ -58,7 +59,7 @@ final class YouTubeInput implements InputPlugin
         $title = null;
 
         if ($parsed['kind'] === 'video') {
-            $payload = $this->json($this->http('GET', 'https://www.youtube.com/oembed?format=json&url=' . rawurlencode($parsed['canonical'])));
+            $payload = $this->json($this->http('GET', $this->url('https://www.youtube.com/oembed', ['format' => 'json', 'url' => $parsed['canonical']])));
             $title = is_string($payload['title'] ?? null) && $payload['title'] !== '' ? $payload['title'] : "YouTube Video {$id}";
         }
 
@@ -79,7 +80,7 @@ final class YouTubeInput implements InputPlugin
         }
 
         if ($intent === DiscoveryIntent::Refresh && $kind === 'channel') {
-            return $this->filter($this->feed('https://www.youtube.com/feeds/videos.xml?channel_id=' . rawurlencode($id)), $options);
+            return $this->filter($this->feed($this->url('https://www.youtube.com/feeds/videos.xml', ['channel_id' => $id])), $options);
         }
 
         try {
@@ -95,7 +96,7 @@ final class YouTubeInput implements InputPlugin
     {
 
         if ($kind === 'channel') {
-            $channel = $this->json($this->http('GET', 'https://www.googleapis.com/youtube/v3/channels?part=contentDetails&id=' . rawurlencode($id), credential: 'youtube-data-api'));
+            $channel = $this->json($this->http('GET', $this->url('https://www.googleapis.com/youtube/v3/channels', ['part' => 'contentDetails', 'id' => $id]), credential: 'youtube-data-api'));
             $channelItems = is_array($channel['items'] ?? null) ? $channel['items'] : [];
             $channelItem = is_array($channelItems[0] ?? null) ? $channelItems[0] : [];
             $contentDetails = is_array($channelItem['contentDetails'] ?? null) ? $channelItem['contentDetails'] : [];
@@ -111,11 +112,12 @@ final class YouTubeInput implements InputPlugin
         $token = null;
 
         do {
-            $url = 'https://www.googleapis.com/youtube/v3/playlistItems?part=snippet&maxResults=50&playlistId=' . rawurlencode($id);
+            $query = ['part' => 'snippet', 'maxResults' => 50, 'playlistId' => $id];
 
             if ($token !== null) {
-                $url .= '&pageToken=' . rawurlencode($token);
+                $query['pageToken'] = $token;
             }
+            $url = $this->url('https://www.googleapis.com/youtube/v3/playlistItems', $query);
             $payload = $this->json($this->http('GET', $url, credential: 'youtube-data-api'));
 
             $entries = is_array($payload['items'] ?? null) ? $payload['items'] : [];
@@ -147,8 +149,8 @@ final class YouTubeInput implements InputPlugin
             throw new RuntimeException('YouTube complete discovery requires an API key or yt-dlp');
         }
         $url = $kind === 'playlist'
-            ? 'https://www.youtube.com/playlist?list=' . rawurlencode($id)
-            : 'https://www.youtube.com/channel/' . rawurlencode($id);
+            ? $this->url('https://www.youtube.com/playlist', ['list' => $id])
+            : $this->url('https://www.youtube.com/channel/' . rawurlencode($id));
         $result = $this->context->helpers->run('yt-dlp', ['--ignore-errors', '--flat-playlist', '--dump-single-json', '--skip-download', '--no-warnings', $url]);
 
         $payload = json_decode($result->stdout, true);
@@ -177,7 +179,7 @@ final class YouTubeInput implements InputPlugin
                 $published = $date instanceof DateTimeImmutable ? $date->format(DATE_RFC3339) : null;
             }
             [$sizeBytes, $sizeEstimated] = $this->sizeFromEntry($entry);
-            $items[] = new DiscoveredItem($videoId, 'https://www.youtube.com/watch?v=' . $videoId, (string) ($entry['title'] ?? $videoId), is_string($entry['description'] ?? null) ? $entry['description'] : null, $published, is_string($entry['thumbnail'] ?? null) ? $entry['thumbnail'] : null, is_int($entry['duration'] ?? null) ? $entry['duration'] : null, is_string($entry['live_status'] ?? null) ? $entry['live_status'] : null, $sizeBytes, $sizeEstimated);
+            $items[] = new DiscoveredItem($videoId, $this->url('https://www.youtube.com/watch', ['v' => $videoId]), (string) ($entry['title'] ?? $videoId), is_string($entry['description'] ?? null) ? $entry['description'] : null, $published, is_string($entry['thumbnail'] ?? null) ? $entry['thumbnail'] : null, is_int($entry['duration'] ?? null) ? $entry['duration'] : null, is_string($entry['live_status'] ?? null) ? $entry['live_status'] : null, $sizeBytes, $sizeEstimated);
         }
 
         foreach ($this->incompleteItems($result->stderr) as $item) {
@@ -198,7 +200,7 @@ final class YouTubeInput implements InputPlugin
             }
             $id = $match[1];
 
-            $items[] = new DiscoveredItem($id, 'https://www.youtube.com/watch?v=' . $id, "Unavailable YouTube item ({$id})", upstreamState: 'region_blocked');
+            $items[] = new DiscoveredItem($id, $this->url('https://www.youtube.com/watch', ['v' => $id]), "Unavailable YouTube item ({$id})", upstreamState: 'region_blocked');
         }
 
         return $items;
@@ -290,8 +292,12 @@ final class YouTubeInput implements InputPlugin
             array_push($args, '--format', 'bestvideo+bestaudio/best', '--merge-output-format', 'mp4');
         }
 
-        if ($this->bool($options->options, 'include_captions')) {
+        if ($this->bool($options->options, 'include_captions', true)) {
             array_push($args, '--write-subs', '--sub-format', 'vtt', '--sub-langs', $this->text($options->options, 'caption_languages') ?? 'en');
+
+            if ($this->bool($options->options, 'include_auto_captions') || $this->bool($options->options, 'include_auto')) {
+                $args[] = '--write-auto-subs';
+            }
         }
         $args[] = $item->reference;
         $result = $this->context->helpers->run('yt-dlp', $args, function (string $channel, string $buffer): void {
@@ -334,16 +340,20 @@ final class YouTubeInput implements InputPlugin
     /** @return list<InputOption> */
     public function options(): array
     {
-        return [new InputOption('include_shorts', OptionValue::boolean(false)), new InputOption('include_live', OptionValue::boolean(false)), new InputOption('include_captions', OptionValue::boolean(false)), new InputOption('caption_languages', OptionValue::text('en'))];
+        return [new InputOption('include_shorts', OptionValue::boolean(false)), new InputOption('include_live', OptionValue::boolean(false)), new InputOption('include_captions', OptionValue::boolean(true)), new InputOption('include_auto_captions', OptionValue::boolean(false)), new InputOption('caption_languages', OptionValue::text('en'))];
     }
 
     /** @return array{kind:string,id:string,canonical:string} */
     private function parse(string $source): array
     {
-        $url = parse_url($source);
-        $host = strtolower((string) ($url['host'] ?? ''));
-        $path = (string) ($url['path'] ?? '');
-        parse_str((string) ($url['query'] ?? ''), $query);
+        $url = Uri::parse($this->https($source));
+
+        if ($url === null) {
+            throw new RuntimeException('unsupported YouTube URL');
+        }
+        $host = strtolower((string) ($url->getHost() ?? ''));
+        $path = $url->getPath();
+        parse_str($url->getQuery() ?? '', $query);
         $host = preg_replace('/^www\./', '', $host) ?: $host;
 
         if ($host === 'youtu.be') {
@@ -361,14 +371,14 @@ final class YouTubeInput implements InputPlugin
         }
 
         if (isset($query['list']) && is_string($query['list']) && $query['list'] !== '') {
-            return ['kind' => 'playlist', 'id' => $query['list'], 'canonical' => 'https://www.youtube.com/playlist?list=' . rawurlencode($query['list'])];
+            return ['kind' => 'playlist', 'id' => $query['list'], 'canonical' => $this->url('https://www.youtube.com/playlist', ['list' => $query['list']])];
         }
 
         if (str_starts_with($path, '/channel/')) {
             $id = trim(substr($path, 9), '/');
 
             if ($id !== '') {
-                return ['kind' => 'channel', 'id' => $id, 'canonical' => 'https://www.youtube.com/channel/' . rawurlencode($id)];
+                return ['kind' => 'channel', 'id' => $id, 'canonical' => $this->url('https://www.youtube.com/channel/' . rawurlencode($id))];
             }
         }
 
@@ -396,12 +406,18 @@ final class YouTubeInput implements InputPlugin
             throw new RuntimeException('video ID is missing');
         }
 
-        return ['kind' => 'video', 'id' => $id, 'canonical' => 'https://www.youtube.com/watch?v=' . rawurlencode($id)];
+        return ['kind' => 'video', 'id' => $id, 'canonical' => $this->url('https://www.youtube.com/watch', ['v' => $id])];
     }
 
     private function https(string $url): string
     {
-        return preg_replace('~^http://~i', 'https://', $url) ?: $url;
+        $uri = Uri::parse($url);
+
+        if ($uri === null) {
+            throw new RuntimeException('invalid YouTube URL');
+        }
+
+        return strcasecmp($uri->getScheme() ?? '', 'http') === 0 ? $uri->withScheme('https')->toString() : $uri->toString();
     }
 
     /** @return list<DiscoveredItem> */
@@ -427,7 +443,7 @@ final class YouTubeInput implements InputPlugin
             $description = (string) (($entry->xpath('media:group/media:description')[0] ?? ''));
             $thumbnail = $entry->xpath('media:group/media:thumbnail');
             $artwork = isset($thumbnail[0]['url']) ? (string) $thumbnail[0]['url'] : null;
-            $items[] = new DiscoveredItem($id, 'https://www.youtube.com/watch?v=' . $id, (string) ($entry->title ?? $id), $description !== '' ? $description : null, (string) ($entry->published ?? null), $artwork);
+            $items[] = new DiscoveredItem($id, $this->url('https://www.youtube.com/watch', ['v' => $id]), (string) ($entry->title ?? $id), $description !== '' ? $description : null, (string) ($entry->published ?? null), $artwork);
         }
 
         return $items;
@@ -436,10 +452,10 @@ final class YouTubeInput implements InputPlugin
     /** @return list<DiscoveredItem> */
     private function video(string $id): array
     {
-        $url = 'https://www.youtube.com/oembed?format=json&url=' . rawurlencode('https://www.youtube.com/watch?v=' . $id);
+        $reference = $this->url('https://www.youtube.com/watch', ['v' => $id]);
+        $url = $this->url('https://www.youtube.com/oembed', ['format' => 'json', 'url' => $reference]);
         $payload = $this->json($this->http('GET', $url));
 
-        $reference = 'https://www.youtube.com/watch?v=' . $id;
         [$sizeBytes, $sizeEstimated] = $this->context->helpers !== null ? $this->sizeEstimate($reference) : [null, false];
 
         return [new DiscoveredItem($id, $reference, (string) ($payload['title'] ?? $id), artworkReference: is_string($payload['thumbnail_url'] ?? null) ? $payload['thumbnail_url'] : null, sizeBytes: $sizeBytes, sizeEstimated: $sizeEstimated)];
@@ -447,7 +463,7 @@ final class YouTubeInput implements InputPlugin
 
     private function item(string $id, array $snippet): DiscoveredItem
     {
-        return new DiscoveredItem($id, 'https://www.youtube.com/watch?v=' . $id, (string) ($snippet['title'] ?? $id), $snippet['description'] ?? null, $snippet['publishedAt'] ?? null, $snippet['thumbnails']['high']['url'] ?? null);
+        return new DiscoveredItem($id, $this->url('https://www.youtube.com/watch', ['v' => $id]), (string) ($snippet['title'] ?? $id), $snippet['description'] ?? null, $snippet['publishedAt'] ?? null, $snippet['thumbnails']['high']['url'] ?? null);
     }
 
     /** @param list<DiscoveredItem> $items @return list<DiscoveredItem> */
@@ -457,7 +473,7 @@ final class YouTubeInput implements InputPlugin
 
         foreach (array_chunk($items, 50) as $batch) {
             $ids = implode(',', array_map(static fn(DiscoveredItem $item): string => $item->id, $batch));
-            $payload = $this->json($this->http('GET', 'https://www.googleapis.com/youtube/v3/videos?part=snippet,contentDetails,liveStreamingDetails&id=' . $ids, credential: 'youtube-data-api'));
+            $payload = $this->json($this->http('GET', $this->url('https://www.googleapis.com/youtube/v3/videos', ['part' => 'snippet,contentDetails,liveStreamingDetails', 'id' => $ids]), credential: 'youtube-data-api'));
 
             foreach ($payload['items'] ?? [] as $entry) {
                 $id = is_string($entry['id'] ?? null) ? $entry['id'] : '';
@@ -467,7 +483,7 @@ final class YouTubeInput implements InputPlugin
                 }
                 $snippet = is_array($entry['snippet'] ?? null) ? $entry['snippet'] : [];
                 $kind = isset($entry['liveStreamingDetails']) ? 'live' : null;
-                $byId[$id] = new DiscoveredItem($id, 'https://www.youtube.com/watch?v=' . $id, (string) ($snippet['title'] ?? $id), $snippet['description'] ?? null, $snippet['publishedAt'] ?? null, $snippet['thumbnails']['high']['url'] ?? null, $this->duration($entry['contentDetails']['duration'] ?? null), $kind);
+                $byId[$id] = new DiscoveredItem($id, $this->url('https://www.youtube.com/watch', ['v' => $id]), (string) ($snippet['title'] ?? $id), $snippet['description'] ?? null, $snippet['publishedAt'] ?? null, $snippet['thumbnails']['high']['url'] ?? null, $this->duration($entry['contentDetails']['duration'] ?? null), $kind);
             }
         }
 
@@ -518,6 +534,18 @@ final class YouTubeInput implements InputPlugin
         return $response;
     }
 
+    /** @param array<string, scalar> $query */
+    private function url(string $base, array $query = []): string
+    {
+        $uri = Uri::parse($base);
+
+        if ($uri === null) {
+            throw new RuntimeException('invalid URL');
+        }
+
+        return $query === [] ? $uri->toString() : $uri->withQuery(http_build_query($query))->toString();
+    }
+
     private function json(HttpResponse $response): array
     {
         $value = json_decode($this->body($response), true);
@@ -560,7 +588,7 @@ final class YouTubeInput implements InputPlugin
             : null;
     }
 
-    private function bool(array $options, string $key): bool
+    private function bool(array $options, string $key, bool $default = false): bool
     {
         foreach ($options as $option) {
             if ($option->key === $key) {
@@ -568,7 +596,7 @@ final class YouTubeInput implements InputPlugin
             }
         }
 
-        return false;
+        return $default;
     }
 
     private function text(array $options, string $key): ?string
