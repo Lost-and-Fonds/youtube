@@ -70,7 +70,10 @@ final class YouTubeInput implements InputPlugin
         return new ResolvedInput("{$parsed['kind']}:{$id}", $parsed['canonical'], $parsed['kind'], $title, null, null, $sizeBytes, $sizeEstimated);
     }
 
-    /** @param list<InputOption> $options @return list<DiscoveredItem> */
+    /**
+     * @param list<InputOption> $options
+     * @return list<DiscoveredItem>
+     */
     public function discover(string $inputId, DiscoveryIntent $intent, array $options = []): array
     {
         [$kind, $id] = str_contains($inputId, ':') ? explode(':', $inputId, 2) : ['channel', $inputId];
@@ -80,7 +83,16 @@ final class YouTubeInput implements InputPlugin
         }
 
         if ($intent === DiscoveryIntent::Refresh && $kind === 'channel') {
-            return $this->filter($this->feed($this->url('https://www.youtube.com/feeds/videos.xml', ['channel_id' => $id])), $options);
+            /** @var list<DiscoveredItem> $items */
+            $items = $this->feed($this->url('https://www.youtube.com/feeds/videos.xml', ['channel_id' => $id]));
+
+            try {
+                $items = $this->enrich($items);
+            } catch (Throwable) {
+                // The API key is optional; Atom discovery remains the fallback.
+            }
+
+            return $this->filter($items, $options);
         }
 
         try {
@@ -90,8 +102,10 @@ final class YouTubeInput implements InputPlugin
         }
     }
 
-    /** @return list<DiscoveredItem> */
-    /** @param list<InputOption> $options @return list<DiscoveredItem> */
+    /**
+     * @param list<InputOption> $options
+     * @return list<DiscoveredItem>
+     */
     private function completeWithApi(string $kind, string $id, array $options): array
     {
 
@@ -108,6 +122,7 @@ final class YouTubeInput implements InputPlugin
             }
             $kind = 'playlist';
         }
+        /** @var list<DiscoveredItem> $items */
         $items = [];
         $token = null;
 
@@ -126,10 +141,10 @@ final class YouTubeInput implements InputPlugin
                 if (! is_array($entry)) {
                     continue;
                 }
-                $snippet = is_array($entry['snippet'] ?? null) ? $entry['snippet'] : [];
-                $resourceId = is_array($snippet['resourceId'] ?? null) ? $snippet['resourceId'] : [];
-                $entryId = is_array($entry['id'] ?? null) ? $entry['id'] : [];
-                $videoId = $kind === 'playlist' ? ($resourceId['videoId'] ?? null) : ($entryId['videoId'] ?? null);
+                $snippet = $this->object($entry['snippet'] ?? null) ?? [];
+                $resourceId = $this->object($snippet['resourceId'] ?? null) ?? [];
+                $entryId = $this->object($entry['id'] ?? null) ?? [];
+                $videoId = $kind === 'playlist' ? $this->string($resourceId['videoId'] ?? null) : $this->string($entryId['videoId'] ?? null);
 
                 if (is_string($videoId) && $videoId !== '') {
                     $items[] = $this->item($videoId, $snippet);
@@ -141,8 +156,10 @@ final class YouTubeInput implements InputPlugin
         return $this->filter($this->enrichSizes($this->enrich($items)), $options);
     }
 
-    /** @return list<DiscoveredItem> */
-    /** @param list<InputOption> $options @return list<DiscoveredItem> */
+    /**
+     * @param list<InputOption> $options
+     * @return list<DiscoveredItem>
+     */
     private function completeWithYtDlp(string $kind, string $id, array $options): array
     {
         if ($this->context->helpers === null) {
@@ -163,10 +180,11 @@ final class YouTubeInput implements InputPlugin
         if ($result->exitCode !== 0 && $entries === []) {
             throw new RuntimeException('yt-dlp complete discovery failed');
         }
+        /** @var list<DiscoveredItem> $items */
         $items = [];
 
-        foreach ($entries as $entry) {
-            if (! is_array($entry) || ! is_string($entry['id'] ?? null) || $entry['id'] === '') {
+        foreach ($this->objects($entries) as $entry) {
+            if (! is_string($entry['id'] ?? null) || $entry['id'] === '') {
                 continue;
             }
             $videoId = $entry['id'];
@@ -179,7 +197,7 @@ final class YouTubeInput implements InputPlugin
                 $published = $date instanceof DateTimeImmutable ? $date->format(DATE_RFC3339) : null;
             }
             [$sizeBytes, $sizeEstimated] = $this->sizeFromEntry($entry);
-            $items[] = new DiscoveredItem($videoId, $this->url('https://www.youtube.com/watch', ['v' => $videoId]), (string) ($entry['title'] ?? $videoId), is_string($entry['description'] ?? null) ? $entry['description'] : null, $published, is_string($entry['thumbnail'] ?? null) ? $entry['thumbnail'] : null, is_int($entry['duration'] ?? null) ? $entry['duration'] : null, is_string($entry['live_status'] ?? null) ? $entry['live_status'] : null, $sizeBytes, $sizeEstimated);
+            $items[] = new DiscoveredItem($videoId, $this->url('https://www.youtube.com/watch', ['v' => $videoId]), $this->string($entry['title'] ?? null) ?? $videoId, $this->string($entry['description'] ?? null), $published, $this->string($entry['thumbnail'] ?? null), is_int($entry['duration'] ?? null) ? $entry['duration'] : null, $this->string($entry['live_status'] ?? null), $sizeBytes, $sizeEstimated);
         }
 
         foreach ($this->incompleteItems($result->stderr) as $item) {
@@ -206,7 +224,10 @@ final class YouTubeInput implements InputPlugin
         return $items;
     }
 
-    /** @param list<DiscoveredItem> $items @return list<DiscoveredItem> */
+    /**
+     * @param list<DiscoveredItem> $items
+     * @return list<DiscoveredItem>
+     */
     private function enrichSizes(array $items): array
     {
         if ($this->context->helpers === null || $items === []) {
@@ -223,7 +244,7 @@ final class YouTubeInput implements InputPlugin
                 $result = $this->context->helpers->run('yt-dlp', $arguments);
 
                 foreach (preg_split('/\R+/', $result->stdout) ?: [] as $line) {
-                    $entry = json_decode(trim($line), true);
+                    $entry = $this->object(json_decode(trim($line), true));
 
                     if (is_array($entry) && is_string($entry['id'] ?? null)) {
                         $sizes[$entry['id']] = $entry;
@@ -234,7 +255,12 @@ final class YouTubeInput implements InputPlugin
 
             return array_map(function (DiscoveredItem $item) use ($sizes): DiscoveredItem {
                 $metadata = $sizes[$item->id] ?? [];
-                [$sizeBytes, $sizeEstimated] = $metadata === [] ? [$item->sizeBytes, $item->sizeEstimated] : $this->sizeFromEntry($metadata);
+                $sizeBytes = $item->sizeBytes;
+                $sizeEstimated = $item->sizeEstimated;
+
+                if ($metadata !== []) {
+                    [$sizeBytes, $sizeEstimated] = $this->sizeFromEntry($metadata);
+                }
                 $published = $item->publishedAt;
 
                 if (is_int($metadata['timestamp'] ?? null)) {
@@ -246,24 +272,25 @@ final class YouTubeInput implements InputPlugin
 
                 $duration = is_int($metadata['duration'] ?? null) || is_float($metadata['duration'] ?? null) ? (int) $metadata['duration'] : $item->durationSeconds;
 
-                return new DiscoveredItem($item->id, $item->reference, (string) ($metadata['title'] ?? $item->title), is_string($metadata['description'] ?? null) ? $metadata['description'] : $item->description, $published, is_string($metadata['thumbnail'] ?? null) ? $metadata['thumbnail'] : $item->artworkReference, $duration, is_string($metadata['live_status'] ?? null) ? $metadata['live_status'] : $item->kind, $sizeBytes, $sizeEstimated, $item->upstreamState);
+                return new DiscoveredItem($item->id, $item->reference, $this->string($metadata['title'] ?? null) ?? $item->title, $this->string($metadata['description'] ?? null) ?? $item->description, $published, $this->string($metadata['thumbnail'] ?? null) ?? $item->artworkReference, $duration, $this->string($metadata['live_status'] ?? null) ?? $item->kind, $sizeBytes, $sizeEstimated, $item->upstreamState);
             }, $items);
         } catch (Throwable) {
             return $items;
         }
     }
 
-    /** @return array{0:?int,1:bool} */
+    /**
+     * @param array<string, mixed> $entry
+     * @return array{0:?int,1:bool}
+     */
     private function sizeFromEntry(array $entry): array
     {
-        $formats = is_array($entry['requested_formats'] ?? null) ? $entry['requested_formats'] : [$entry];
+        $formats = $this->objects($entry['requested_formats'] ?? null);
+        $formats = $formats === [] ? [$entry] : $formats;
         $total = 0;
         $estimated = false;
 
         foreach ($formats as $format) {
-            if (! is_array($format)) {
-                return [null, false];
-            }
             $exact = $format['filesize'] ?? null;
             $approx = $format['filesize_approx'] ?? null;
             $size = is_int($exact) || is_float($exact) ? $exact : $approx;
@@ -458,32 +485,42 @@ final class YouTubeInput implements InputPlugin
 
         [$sizeBytes, $sizeEstimated] = $this->context->helpers !== null ? $this->sizeEstimate($reference) : [null, false];
 
-        return [new DiscoveredItem($id, $reference, (string) ($payload['title'] ?? $id), artworkReference: is_string($payload['thumbnail_url'] ?? null) ? $payload['thumbnail_url'] : null, sizeBytes: $sizeBytes, sizeEstimated: $sizeEstimated)];
+        return [new DiscoveredItem($id, $reference, $this->string($payload['title'] ?? null) ?? $id, artworkReference: $this->string($payload['thumbnail_url'] ?? null), sizeBytes: $sizeBytes, sizeEstimated: $sizeEstimated)];
     }
 
+    /** @param array<string, mixed> $snippet */
     private function item(string $id, array $snippet): DiscoveredItem
     {
-        return new DiscoveredItem($id, $this->url('https://www.youtube.com/watch', ['v' => $id]), (string) ($snippet['title'] ?? $id), $snippet['description'] ?? null, $snippet['publishedAt'] ?? null, $snippet['thumbnails']['high']['url'] ?? null);
+        $thumbnails = $this->object($snippet['thumbnails'] ?? null);
+        $high = $this->object($thumbnails['high'] ?? null);
+
+        return new DiscoveredItem($id, $this->url('https://www.youtube.com/watch', ['v' => $id]), $this->string($snippet['title'] ?? null) ?? $id, $this->string($snippet['description'] ?? null), $this->string($snippet['publishedAt'] ?? null), $this->string($high['url'] ?? null));
     }
 
-    /** @param list<DiscoveredItem> $items @return list<DiscoveredItem> */
+    /**
+     * @param list<DiscoveredItem> $items
+     * @return list<DiscoveredItem>
+     */
     private function enrich(array $items): array
     {
+        /** @var array<string, DiscoveredItem> $byId */
         $byId = [];
 
         foreach (array_chunk($items, 50) as $batch) {
             $ids = implode(',', array_map(static fn(DiscoveredItem $item): string => $item->id, $batch));
             $payload = $this->json($this->http('GET', $this->url('https://www.googleapis.com/youtube/v3/videos', ['part' => 'snippet,contentDetails,liveStreamingDetails', 'id' => $ids]), credential: 'youtube-data-api'));
 
-            foreach ($payload['items'] ?? [] as $entry) {
-                $id = is_string($entry['id'] ?? null) ? $entry['id'] : '';
+            foreach ($this->objects($payload['items'] ?? null) as $entry) {
+                $id = $this->string($entry['id'] ?? null) ?? '';
 
                 if ($id === '') {
                     continue;
                 }
-                $snippet = is_array($entry['snippet'] ?? null) ? $entry['snippet'] : [];
-                $kind = isset($entry['liveStreamingDetails']) ? 'live' : null;
-                $byId[$id] = new DiscoveredItem($id, $this->url('https://www.youtube.com/watch', ['v' => $id]), (string) ($snippet['title'] ?? $id), $snippet['description'] ?? null, $snippet['publishedAt'] ?? null, $snippet['thumbnails']['high']['url'] ?? null, $this->duration($entry['contentDetails']['duration'] ?? null), $kind);
+                $snippet = $this->object($entry['snippet'] ?? null) ?? [];
+                $thumbnails = $this->object($snippet['thumbnails'] ?? null);
+                $high = $this->object($thumbnails['high'] ?? null);
+                $contentDetails = $this->object($entry['contentDetails'] ?? null) ?? [];
+                $byId[$id] = new DiscoveredItem($id, $this->url('https://www.youtube.com/watch', ['v' => $id]), $this->string($snippet['title'] ?? null) ?? $id, $this->string($snippet['description'] ?? null), $this->string($snippet['publishedAt'] ?? null), $this->string($high['url'] ?? null), $this->duration($contentDetails['duration'] ?? null), isset($entry['liveStreamingDetails']) ? 'live' : null);
             }
         }
 
@@ -499,7 +536,11 @@ final class YouTubeInput implements InputPlugin
         return ((int) ($match[1] ?? 0) * 3600) + ((int) ($match[2] ?? 0) * 60) + (int) ($match[3] ?? 0);
     }
 
-    /** @param list<InputOption> $options @param list<DiscoveredItem> $items */
+    /**
+     * @param list<DiscoveredItem> $items
+     * @param list<InputOption> $options
+     * @return list<DiscoveredItem>
+     */
     private function filter(array $items, array $options): array
     {
         $shorts = $this->bool($options, 'include_shorts');
@@ -514,6 +555,7 @@ final class YouTubeInput implements InputPlugin
         }));
     }
 
+    /** @param array<string, string> $headers */
     private function http(string $method, string $url, array $headers = [], ?string $body = null, ?string $credential = null): HttpResponse
     {
         $headers = ['User-Agent' => 'Mozilla/5.0 (compatible; Stashd/1.0)', ...$headers];
@@ -546,15 +588,59 @@ final class YouTubeInput implements InputPlugin
         return $query === [] ? $uri->toString() : $uri->withQuery(http_build_query($query))->toString();
     }
 
+    /** @return array<string, mixed> */
     private function json(HttpResponse $response): array
     {
-        $value = json_decode($this->body($response), true);
+        $value = $this->object(json_decode($this->body($response), true));
 
-        if (! is_array($value)) {
+        if ($value === null) {
             throw new RuntimeException('YouTube response was invalid JSON');
         }
 
         return $value;
+    }
+
+    /** @return array<string, mixed>|null */
+    private function object(mixed $value): ?array
+    {
+        if (! is_array($value)) {
+            return null;
+        }
+
+        $object = [];
+
+        foreach ($value as $key => $entry) {
+            if (is_string($key)) {
+                $object[$key] = $entry;
+            }
+        }
+
+        return $object;
+    }
+
+    /** @return list<array<string, mixed>> */
+    private function objects(mixed $value): array
+    {
+        if (! is_array($value)) {
+            return [];
+        }
+
+        $objects = [];
+
+        foreach ($value as $entry) {
+            $object = $this->object($entry);
+
+            if ($object !== null) {
+                $objects[] = $object;
+            }
+        }
+
+        return $objects;
+    }
+
+    private function string(mixed $value): ?string
+    {
+        return is_string($value) ? $value : null;
     }
 
     private function body(HttpResponse $response): string
@@ -588,6 +674,7 @@ final class YouTubeInput implements InputPlugin
             : null;
     }
 
+    /** @param list<InputOption> $options */
     private function bool(array $options, string $key, bool $default = false): bool
     {
         foreach ($options as $option) {
@@ -599,6 +686,7 @@ final class YouTubeInput implements InputPlugin
         return $default;
     }
 
+    /** @param list<InputOption> $options */
     private function text(array $options, string $key): ?string
     {
         foreach ($options as $option) {
@@ -643,25 +731,29 @@ final class YouTubeInput implements InputPlugin
     /** @return array{0:?int,1:bool} */
     private function sizeEstimate(string $reference): array
     {
+        if ($this->context->helpers === null) {
+            return [null, false];
+        }
+
         try {
-            $result = $this->context->helpers?->run('yt-dlp', ['--no-playlist', '--no-warnings', '--dump-single-json', '--skip-download', '--format', 'bestvideo+bestaudio/best', $reference]);
+            $result = $this->context->helpers->run('yt-dlp', ['--no-playlist', '--no-warnings', '--dump-single-json', '--skip-download', '--format', 'bestvideo+bestaudio/best', $reference]);
         } catch (Throwable) {
             return [null, false];
         }
 
-        $data = json_decode(trim((string) ($result?->stdout ?? '')), true);
+        $data = $this->object(json_decode(trim($result->stdout), true));
 
-        if (! is_array($data) && $result !== null) {
+        if ($data === null) {
             foreach (array_reverse(preg_split('/\R+/', $result->stdout) ?: []) as $line) {
-                $data = json_decode(trim($line), true);
+                $data = $this->object(json_decode(trim($line), true));
 
-                if (is_array($data)) {
+                if ($data !== null) {
                     break;
                 }
             }
         }
 
-        if ($result === null || $result->exitCode !== 0 || ! is_array($data)) {
+        if ($result->exitCode !== 0 || $data === null) {
             return [null, false];
         }
         $formats = is_array($data['requested_formats'] ?? null) ? $data['requested_formats'] : [$data];

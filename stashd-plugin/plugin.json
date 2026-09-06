@@ -1,7 +1,7 @@
 {
   "id": "youtube",
   "name": "YouTube",
-  "version": "0.3.33",
+  "version": "0.3.34",
   "runtime": "php",
   "api_version": "0.1",
   "entrypoint": "stashd-plugin/plugin.php",
@@ -13,7 +13,7 @@
   ],
   "http_grants": [
     {"allowed_prefixes": ["https://www.youtube.com/", "https://youtube.com/", "https://m.youtube.com/", "https://music.youtube.com/", "https://youtu.be/"], "operations": ["resolve", "refresh", "complete"]},
-    {"allowed_prefixes": ["https://www.googleapis.com/youtube/v3/"], "operations": ["complete"], "credential": {"name": "youtube-data-api", "parameter": "key", "placement": "query"}}
+    {"allowed_prefixes": ["https://www.googleapis.com/youtube/v3/"], "operations": ["refresh", "complete"], "credential": {"name": "youtube-data-api", "parameter": "key", "placement": "query"}}
   ],
   "helpers": {
     "yt-dlp": {"executable": "stashd-plugin/helpers/yt-dlp", "network": true},

@@ -66,6 +66,10 @@ it('preserves the YouTube provider contract', function (): void {
                 return new HttpResponse(404);
             }
 
+            if (str_contains($url, 'googleapis.com/youtube/v3/videos')) {
+                return new HttpResponse(200, inlineBody: '{"items":[{"id":"vid1","snippet":{"title":"One","publishedAt":"2026-01-01T00:00:00Z"},"contentDetails":{"duration":"PT1H15M"}}]}');
+            }
+
             return new HttpResponse(200, inlineBody: '{"items":[],"nextPageToken":null}');
         }
     }
@@ -139,7 +143,7 @@ it('preserves the YouTube provider contract', function (): void {
     ytAssert($plugin->resolve(new SourceDescriptor(['url' => OptionValue::text('https://www.youtube.com/playlist?list=PL123')]))->artworkReference === 'https://yt3.ggpht.com/channel-avatar', 'playlist channel avatar resolution failed');
     ytAssert($plugin->resolve(new SourceDescriptor(['url' => OptionValue::text('https://youtu.be/abc123')]))->title === 'Video', 'video title resolution failed');
     $items = $plugin->discover('UCfixture123', \Stashd\PluginSdk\DiscoveryIntent::Refresh);
-    ytAssert(count($items) === 2 && $items[0]->id === 'vid1', 'Atom discovery failed');
+    ytAssert(count($items) === 2 && $items[0]->id === 'vid1' && $items[0]->durationSeconds === 4500, 'Atom discovery enrichment failed');
     $playlistItems = $plugin->discover('playlist:PL123', \Stashd\PluginSdk\DiscoveryIntent::Refresh);
     ytAssert(count($playlistItems) === 1 && $playlistItems[0]->id === 'backfill1', 'playlist refresh fallback failed');
     $helper->completeExitCode = 1;
