@@ -153,7 +153,9 @@ final class YouTubeInput implements InputPlugin
             $token = is_string($payload['nextPageToken'] ?? null) ? $payload['nextPageToken'] : null;
         } while ($token !== null);
 
-        return $this->filter($this->enrichSizes($this->enrich($items)), $options);
+        $items = $this->enrich($items);
+
+        return $this->filter($this->bool($options, 'skip_size_enrichment') ? $items : $this->enrichSizes($items), $options);
     }
 
     /**
