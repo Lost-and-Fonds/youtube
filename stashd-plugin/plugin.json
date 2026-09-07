@@ -3,7 +3,7 @@
   "name": "YouTube",
   "version": "0.3.35",
   "runtime": "php",
-  "api_version": "0.1",
+  "api_version": "0.2",
   "entrypoint": "stashd-plugin/plugin.php",
   "helpers_lock": "stashd-plugin/helpers.lock.json",
   "kind": "input",

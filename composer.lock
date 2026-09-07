@@ -4,25 +4,25 @@
         "Read more about it at https://getcomposer.org/doc/01-basic-usage.md#installing-dependencies",
         "This file is @generated automatically"
     ],
-    "content-hash": "a822b5cac8e20484e50566c3741b7643",
+    "content-hash": "3b152e54b01e7a289622edce89b4e036",
     "packages": [
         {
             "name": "stashd/php-sdk",
-            "version": "0.2.11",
+            "version": "0.3.0",
             "source": {
                 "type": "git",
                 "url": "https://github.com/Lost-and-Fonds/stashd-php-sdk.git",
-                "reference": "8639aef348f54c429a958828958ddac6a3cc26aa"
+                "reference": "0659ab3b0569f14790ecff3a887389f90b45d964"
             },
             "dist": {
                 "type": "zip",
-                "url": "https://api.github.com/repos/Lost-and-Fonds/stashd-php-sdk/zipball/8639aef348f54c429a958828958ddac6a3cc26aa",
-                "reference": "8639aef348f54c429a958828958ddac6a3cc26aa",
+                "url": "https://api.github.com/repos/Lost-and-Fonds/stashd-php-sdk/zipball/0659ab3b0569f14790ecff3a887389f90b45d964",
+                "reference": "0659ab3b0569f14790ecff3a887389f90b45d964",
                 "shasum": ""
             },
             "require": {
                 "php": "^8.5",
-                "stashd/plugin-api": "^0.1"
+                "stashd/plugin-api": "^0.2"
             },
             "require-dev": {
                 "friendsofphp/php-cs-fixer": "^3.95",
@@ -56,23 +56,23 @@
             ],
             "description": "PHP authoring SDK for Stashd plugins",
             "support": {
-                "source": "https://github.com/Lost-and-Fonds/stashd-php-sdk/tree/v0.2.11",
+                "source": "https://github.com/Lost-and-Fonds/stashd-php-sdk/tree/0659ab3",
                 "issues": "https://github.com/Lost-and-Fonds/stashd-php-sdk/issues"
             },
-            "time": "2026-09-01T08:17:25+00:00"
+            "time": "2026-09-07T00:00:00+00:00"
         },
         {
             "name": "stashd/plugin-api",
-            "version": "0.1.1",
+            "version": "0.2.0",
             "source": {
                 "type": "git",
                 "url": "https://github.com/Lost-and-Fonds/plugin-api.git",
-                "reference": "72c5d498bf5cc6fe18f925700583f193e5297261"
+                "reference": "5af5a08c347c15b3afbb6fb33b06ff5a04149f14"
             },
             "dist": {
                 "type": "zip",
-                "url": "https://api.github.com/repos/Lost-and-Fonds/plugin-api/zipball/72c5d498bf5cc6fe18f925700583f193e5297261",
-                "reference": "72c5d498bf5cc6fe18f925700583f193e5297261",
+                "url": "https://api.github.com/repos/Lost-and-Fonds/plugin-api/zipball/5af5a08c347c15b3afbb6fb33b06ff5a04149f14",
+                "reference": "5af5a08c347c15b3afbb6fb33b06ff5a04149f14",
                 "shasum": ""
             },
             "type": "library",
@@ -81,10 +81,10 @@
             ],
             "description": "The language-neutral contract for native Stashd plugins",
             "support": {
-                "source": "https://github.com/Lost-and-Fonds/plugin-api/tree/v0.1.1",
+                "source": "https://github.com/Lost-and-Fonds/plugin-api/tree/5af5a08",
                 "issues": "https://github.com/Lost-and-Fonds/plugin-api/issues"
             },
-            "time": "2026-09-01T08:17:13+00:00"
+            "time": "2026-09-07T00:00:00+00:00"
         }
     ],
     "packages-dev": [
