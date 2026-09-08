@@ -8,6 +8,7 @@ use DateTimeImmutable;
 use RuntimeException;
 use Stashd\PluginSdk\AcquisitionOptions;
 use Stashd\PluginSdk\AcquisitionResult;
+use Stashd\PluginSdk\ArtifactRole;
 use Stashd\PluginSdk\DiscoveredItem;
 use Stashd\PluginSdk\DiscoveryIntent;
 use Stashd\PluginSdk\HttpResponse;
@@ -20,6 +21,7 @@ use Stashd\PluginSdk\PluginContext;
 use Stashd\PluginSdk\ResolvedInput;
 use Stashd\PluginSdk\SourceDescriptor;
 use Stashd\PluginSdk\StagedArtifact;
+use Stashd\PluginSdk\UnavailableArtifact;
 use Throwable;
 use Uri\Rfc3986\Uri;
 
@@ -312,16 +314,33 @@ final class YouTubeInput implements InputPlugin
         if ($this->context->staging === null || $this->context->helpers === null) {
             throw new RuntimeException('acquisition capabilities are unavailable');
         }
+        $requested = $options->requestedRoles;
+        $roles = $requested === null ? [ArtifactRole::Primary, ArtifactRole::Captions, ArtifactRole::Artwork, ArtifactRole::Metadata] : $requested;
+        $wantsPrimary = in_array(ArtifactRole::Primary, $roles, true);
         $output = 'youtube-' . preg_replace('/[^A-Za-z0-9_-]/', '_', $item->id);
-        $args = ['--no-playlist', '--newline', '--no-warnings', '--progress', '--restrict-filenames', '--progress-template', 'download:progress=%(progress._percent_str)s', '--ffmpeg-location', '/plugin/stashd-plugin/helpers', '--print', 'after_move:filepath', '--output', $output . '.%(ext)s', '--write-info-json', '--write-thumbnail'];
+        $args = ['--no-playlist', '--newline', '--no-warnings', '--progress', '--restrict-filenames', '--progress-template', 'download:progress=%(progress._percent_str)s', '--ffmpeg-location', '/plugin/stashd-plugin/helpers', '--print', 'after_move:filepath', '--output', $output . '.%(ext)s'];
 
-        if ($options->mediaKind === MediaKind::Audio) {
-            array_push($args, '--extract-audio', '--audio-format', 'mp3', '--audio-quality', '128K');
-        } else {
-            array_push($args, '--format', 'bestvideo+bestaudio/best', '--merge-output-format', 'mp4');
+        if (! $wantsPrimary) {
+            $args[] = '--skip-download';
         }
 
-        if ($this->bool($options->options, 'include_captions', true)) {
+        if (in_array(ArtifactRole::Metadata, $roles, true)) {
+            $args[] = '--write-info-json';
+        }
+
+        if (in_array(ArtifactRole::Artwork, $roles, true)) {
+            $args[] = '--write-thumbnail';
+        }
+
+        if ($wantsPrimary) {
+            if ($options->mediaKind === MediaKind::Audio) {
+                array_push($args, '--extract-audio', '--audio-format', 'mp3', '--audio-quality', '128K');
+            } else {
+                array_push($args, '--format', 'bestvideo+bestaudio/best', '--merge-output-format', 'mp4');
+            }
+        }
+
+        if (in_array(ArtifactRole::Captions, $roles, true) && $this->bool($options->options, 'include_captions', true)) {
             array_push($args, '--write-subs', '--sub-format', 'vtt', '--sub-langs', $this->text($options->options, 'caption_languages') ?? 'en');
 
             if ($this->bool($options->options, 'include_auto_captions') || $this->bool($options->options, 'include_auto')) {
@@ -337,6 +356,10 @@ final class YouTubeInput implements InputPlugin
             $fraction = min(1.0, max(0.0, (float) $match[1] / 100));
             $this->context->progress->report('Downloading', $fraction);
         });
+
+        if ($result->exitCode !== 0 && $requested !== null && preg_match('/(?:country|region|not available in your country)/i', $result->stderr) === 1) {
+            return new AcquisitionResult(unavailable: array_map(static fn(ArtifactRole $role): UnavailableArtifact => new UnavailableArtifact($role, true, 'The requested asset is unavailable in this region.'), $roles));
+        }
 
         if ($result->exitCode !== 0) {
             throw new RuntimeException($result->exitCode === 124 ? 'acquisition timed out' : 'acquisition helper failed');
@@ -359,8 +382,21 @@ final class YouTubeInput implements InputPlugin
             $artifacts[] = new StagedArtifact($staged->reference, $staged->mediaType, $staged->sizeBytes, $role);
         }
 
-        if (! array_filter($artifacts, static fn(StagedArtifact $artifact): bool => $artifact->role === 'primary')) {
+        if ($requested === null && ! array_filter($artifacts, static fn(StagedArtifact $artifact): bool => $artifact->role === 'primary')) {
             throw new RuntimeException('acquisition produced no primary media artifact');
+        }
+
+        if ($requested !== null) {
+            $found = array_values(array_filter(array_map(static fn(StagedArtifact $artifact): ?ArtifactRole => $artifact->role === null ? null : ArtifactRole::tryFrom($artifact->role), $artifacts)));
+            $unavailable = [];
+
+            foreach ($roles as $role) {
+                if (! in_array($role, $found, true)) {
+                    $unavailable[] = new UnavailableArtifact($role, true, 'The requested asset was not provided by YouTube.');
+                }
+            }
+
+            return new AcquisitionResult($artifacts, $unavailable);
         }
 
         return new AcquisitionResult($artifacts);

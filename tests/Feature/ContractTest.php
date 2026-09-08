@@ -3,6 +3,7 @@
 declare(strict_types=1);
 
 use Stashd\PluginSdk\AcquisitionOptions;
+use Stashd\PluginSdk\ArtifactRole;
 use Stashd\PluginSdk\HelperResult;
 use Stashd\PluginSdk\HelperRunner;
 use Stashd\PluginSdk\HttpClient;
@@ -159,5 +160,7 @@ it('preserves the YouTube provider contract', function (): void {
     ytAssert(in_array(0.35, $progress->fractions, true), 'yt-dlp progress was not translated');
     $plugin->acquire($items[0], new AcquisitionOptions(MediaKind::Video, [new InputOption('include_auto_captions', OptionValue::boolean(true))]));
     ytAssert(in_array('--write-subs', $helper->args, true) && in_array('--write-auto-subs', $helper->args, true), 'automatic captions opt-in was not passed to yt-dlp');
+    $plugin->acquire($items[0], new AcquisitionOptions(MediaKind::Video, [new InputOption('include_captions', OptionValue::boolean(true))], [ArtifactRole::Captions]));
+    ytAssert(in_array('--skip-download', $helper->args, true) && in_array('--write-subs', $helper->args, true), 'role-scoped caption acquisition was not passed to yt-dlp');
     expect(true)->toBeTrue();
 });
