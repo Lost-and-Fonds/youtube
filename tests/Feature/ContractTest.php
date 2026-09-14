@@ -125,9 +125,14 @@ it('preserves the YouTube provider contract', function (): void {
     final class YtProgress implements ProgressReporter
     {
         /** @var list<float|null> */ public array $fractions = [];
+        /** @var list<string> */ public array $discovered = [];
         public function report(string $stage, ?float $fraction = null): void
         {
             $this->fractions[] = $fraction;
+        }
+        public function discovered(\Stashd\PluginSdk\DiscoveredItem $item): void
+        {
+            $this->discovered[] = $item->id;
         }
     }
 
@@ -145,6 +150,7 @@ it('preserves the YouTube provider contract', function (): void {
     ytAssert($plugin->resolve(new SourceDescriptor(['url' => OptionValue::text('https://youtu.be/abc123')]))->title === 'Video', 'video title resolution failed');
     $items = $plugin->discover('UCfixture123', \Stashd\PluginSdk\DiscoveryIntent::Refresh);
     ytAssert(count($items) === 2 && $items[0]->id === 'vid1' && $items[0]->durationSeconds === 4500, 'Atom discovery enrichment failed');
+    ytAssert($progress->discovered === ['vid1', 'vid2'], 'discovery items were not reported incrementally');
     $playlistItems = $plugin->discover('playlist:PL123', \Stashd\PluginSdk\DiscoveryIntent::Refresh);
     ytAssert(count($playlistItems) === 1 && $playlistItems[0]->id === 'backfill1', 'playlist refresh fallback failed');
     $helper->completeExitCode = 1;

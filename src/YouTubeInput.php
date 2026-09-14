@@ -27,6 +27,9 @@ use Uri\Rfc3986\Uri;
 
 final class YouTubeInput implements InputPlugin
 {
+    /** @var array<string, true> */
+    private array $reportedItems = [];
+
     public function __construct(private readonly PluginContext $context) {}
 
     public function resolve(SourceDescriptor $source): ResolvedInput
@@ -81,12 +84,16 @@ final class YouTubeInput implements InputPlugin
         [$kind, $id] = str_contains($inputId, ':') ? explode(':', $inputId, 2) : ['channel', $inputId];
 
         if ($kind === 'video') {
-            return $this->video($id);
+            $items = $this->video($id);
+            $this->reportDiscovered($items);
+
+            return $items;
         }
 
         if ($intent === DiscoveryIntent::Refresh && $kind === 'channel') {
             /** @var list<DiscoveredItem> $items */
             $items = $this->feed($this->url('https://www.youtube.com/feeds/videos.xml', ['channel_id' => $id]));
+            $this->reportDiscovered($this->filter($items, $options));
 
             try {
                 $items = $this->enrich($items);
@@ -94,14 +101,21 @@ final class YouTubeInput implements InputPlugin
                 // The API key is optional; Atom discovery remains the fallback.
             }
 
-            return $this->filter($items, $options);
+            $items = $this->filter($items, $options);
+            $this->reportDiscovered($items);
+
+            return $items;
         }
 
         try {
-            return $this->completeWithApi($kind, $id, $options);
+            $items = $this->completeWithApi($kind, $id, $options);
         } catch (Throwable) {
-            return $this->completeWithYtDlp($kind, $id, $options);
+            $items = $this->completeWithYtDlp($kind, $id, $options);
         }
+
+        $this->reportDiscovered($items);
+
+        return $items;
     }
 
     /**
@@ -226,6 +240,19 @@ final class YouTubeInput implements InputPlugin
         }
 
         return $items;
+    }
+
+    /** @param list<DiscoveredItem> $items */
+    private function reportDiscovered(array $items): void
+    {
+        foreach ($items as $item) {
+            if (isset($this->reportedItems[$item->id])) {
+                continue;
+            }
+
+            $this->reportedItems[$item->id] = true;
+            $this->context->progress->discovered($item);
+        }
     }
 
     /**
