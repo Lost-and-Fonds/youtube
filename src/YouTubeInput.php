@@ -91,8 +91,12 @@ final class YouTubeInput implements InputPlugin
         }
 
         if ($intent === DiscoveryIntent::Refresh && $kind === 'channel') {
-            /** @var list<DiscoveredItem> $items */
-            $items = $this->feed($this->url('https://www.youtube.com/feeds/videos.xml', ['channel_id' => $id]));
+            try {
+                /** @var list<DiscoveredItem> $items */
+                $items = $this->feed($this->url('https://www.youtube.com/feeds/videos.xml', ['channel_id' => $id]));
+            } catch (Throwable) {
+                $items = $this->completeWithYtDlp($kind, $id, $options);
+            }
             $this->reportDiscovered($this->filter($items, $options));
 
             try {

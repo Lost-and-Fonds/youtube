@@ -41,10 +41,12 @@ it('preserves the YouTube provider contract', function (): void {
 
     final class YtHttp implements HttpClient
     {
+        public bool $feedMissing = false;
+
         public function request(string $method, string $url, array $headers = [], ?string $body = null, ?string $credential = null): HttpResponse
         {
             if (str_contains($url, 'feeds/videos.xml')) {
-                if (str_contains($url, 'playlist_id=')) {
+                if ($this->feedMissing || str_contains($url, 'playlist_id=')) {
                     return new HttpResponse(404);
                 }
 
@@ -151,6 +153,9 @@ it('preserves the YouTube provider contract', function (): void {
     $items = $plugin->discover('UCfixture123', \Stashd\PluginSdk\DiscoveryIntent::Refresh);
     ytAssert(count($items) === 2 && $items[0]->id === 'vid1' && $items[0]->durationSeconds === 4500, 'Atom discovery enrichment failed');
     ytAssert($progress->discovered === ['vid1', 'vid2'], 'discovery items were not reported incrementally');
+    $http->feedMissing = true;
+    ytAssert(count($plugin->discover('UCfixture123', \Stashd\PluginSdk\DiscoveryIntent::Refresh)) === 2, 'yt-dlp fallback for a missing Atom feed failed');
+    $http->feedMissing = false;
     $playlistItems = $plugin->discover('playlist:PL123', \Stashd\PluginSdk\DiscoveryIntent::Refresh);
     ytAssert(count($playlistItems) === 1 && $playlistItems[0]->id === 'backfill1', 'playlist refresh fallback failed');
     $helper->completeExitCode = 1;
