@@ -90,36 +90,17 @@ final class YouTubeInput implements InputPlugin
             return $items;
         }
 
-        if ($intent === DiscoveryIntent::Refresh && $kind === 'channel') {
-            try {
-                /** @var list<DiscoveredItem> $items */
-                $items = $this->feed($this->url('https://www.youtube.com/feeds/videos.xml', ['channel_id' => $id]));
-            } catch (Throwable) {
-                try {
-                    $items = $this->completeWithApi($kind, $id, $options);
-                } catch (Throwable) {
-                    $items = $this->completeWithYtDlp($kind, $id, $options);
-                }
-            }
-            $this->reportDiscovered($this->filter($items, $options));
-
-            try {
-                $items = $this->enrich($items);
-            } catch (Throwable) {
-                // The API key is optional; Atom discovery remains the fallback.
-            }
-
-            $items = $this->filter($items, $options);
+        if ($intent === DiscoveryIntent::Refresh && in_array($kind, ['channel', 'playlist'], true)) {
+            $feedQuery = $kind === 'playlist' ? ['playlist_id' => $id] : ['channel_id' => $id];
+            $items = $this->filter($this->feed($this->url('https://www.youtube.com/feeds/videos.xml', $feedQuery)), $options);
             $this->reportDiscovered($items);
 
             return $items;
         }
 
-        try {
-            $items = $this->completeWithApi($kind, $id, $options);
-        } catch (Throwable) {
-            $items = $this->completeWithYtDlp($kind, $id, $options);
-        }
+        $items = $this->bool($options, '__stashd_complete_credential_available')
+            ? $this->completeWithApi($kind, $id, $options)
+            : $this->completeWithYtDlp($kind, $id, $options);
 
         $this->reportDiscovered($items);
 
@@ -177,9 +158,11 @@ final class YouTubeInput implements InputPlugin
             $token = is_string($payload['nextPageToken'] ?? null) ? $payload['nextPageToken'] : null;
         } while ($token !== null);
 
-        $items = $this->enrich($items);
+        if (! $this->bool($options, 'skip_enrichment')) {
+            $items = $this->enrich($items);
+        }
 
-        return $this->filter($this->bool($options, 'skip_size_enrichment') ? $items : $this->enrichSizes($items), $options);
+        return $this->filter($this->enrichSizes($items, $this->bool($options, 'skip_size_enrichment') || $this->bool($options, 'skip_enrichment')), $options);
     }
 
     /**
@@ -230,7 +213,7 @@ final class YouTubeInput implements InputPlugin
             $items[] = $item;
         }
 
-        return $this->filter($items, $options);
+        return $this->filter($this->enrichSizes($items, $this->bool($options, 'skip_size_enrichment') || $this->bool($options, 'skip_enrichment')), $options);
     }
 
     /** @return list<DiscoveredItem> */
@@ -267,7 +250,7 @@ final class YouTubeInput implements InputPlugin
      * @param list<DiscoveredItem> $items
      * @return list<DiscoveredItem>
      */
-    private function enrichSizes(array $items): array
+    private function enrichSizes(array $items, bool $skipSizeEnrichment = false): array
     {
         if ($this->context->helpers === null || $items === []) {
             return $items;
@@ -292,12 +275,12 @@ final class YouTubeInput implements InputPlugin
                 $this->context->progress->report(sprintf('Inspected video metadata (%d of %d)', $index + 1, count($batches)), ($index + 1) / max(1, count($batches)));
             }
 
-            return array_map(function (DiscoveredItem $item) use ($sizes): DiscoveredItem {
+            return array_map(function (DiscoveredItem $item) use ($sizes, $skipSizeEnrichment): DiscoveredItem {
                 $metadata = $sizes[$item->id] ?? [];
                 $sizeBytes = $item->sizeBytes;
                 $sizeEstimated = $item->sizeEstimated;
 
-                if ($metadata !== []) {
+                if ($metadata !== [] && ! $skipSizeEnrichment) {
                     [$sizeBytes, $sizeEstimated] = $this->sizeFromEntry($metadata);
                 }
                 $published = $item->publishedAt;

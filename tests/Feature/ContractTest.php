@@ -42,15 +42,20 @@ it('preserves the YouTube provider contract', function (): void {
     final class YtHttp implements HttpClient
     {
         public bool $feedMissing = false;
+        public bool $playlistFeedMissing = false;
 
         public function request(string $method, string $url, array $headers = [], ?string $body = null, ?string $credential = null): HttpResponse
         {
             if (str_contains($url, 'feeds/videos.xml')) {
-                if ($this->feedMissing || str_contains($url, 'playlist_id=')) {
+                if ($this->feedMissing || $this->playlistFeedMissing && str_contains($url, 'playlist_id=')) {
                     return new HttpResponse(404);
                 }
 
-                return new HttpResponse(200, inlineBody: '<feed xmlns="http://www.w3.org/2005/Atom" xmlns:yt="http://www.youtube.com/xml/schemas/2015"><entry><title>One</title><published>2026-01-01T00:00:00Z</published><yt:videoId>vid1</yt:videoId></entry><entry><title>Two</title><published>2026-01-02T00:00:00Z</published><yt:videoId>vid2</yt:videoId></entry></feed>');
+                if (str_contains($url, 'playlist_id=')) {
+                    return new HttpResponse(200, inlineBody: '<feed xmlns="http://www.w3.org/2005/Atom" xmlns:yt="http://www.youtube.com/xml/schemas/2015"><entry><title>Playlist item</title><published>2026-01-03T00:00:00Z</published><yt:videoId>playlist1</yt:videoId></entry></feed>');
+                }
+
+                return new HttpResponse(200, inlineBody: '<feed xmlns="http://www.w3.org/2005/Atom" xmlns:yt="http://www.youtube.com/xml/schemas/2015" xmlns:media="http://search.yahoo.com/mrss/"><entry><title>One</title><published>2026-01-01T00:00:00Z</published><yt:videoId>vid1</yt:videoId><media:group><media:description>Description</media:description><media:thumbnail url="https://i.ytimg.com/vid1.jpg" /></media:group></entry><entry><title>Two</title><published>2026-01-02T00:00:00Z</published><yt:videoId>vid2</yt:videoId></entry></feed>');
             }
 
             if (str_contains($url, 'oembed')) {
@@ -102,6 +107,10 @@ it('preserves the YouTube provider contract', function (): void {
             ytAssert($name === 'yt-dlp', 'wrong helper');
             $this->args = $arguments;
 
+            if (in_array('--dump-json', $arguments, true)) {
+                return new HelperResult(0, json_encode(['id' => 'backfill1', 'title' => 'Backfill item', 'upload_date' => '20260101', 'duration' => 321, 'filesize_approx' => 1234], JSON_THROW_ON_ERROR));
+            }
+
             if ($onOutput !== null && in_array('--progress-template', $arguments, true)) {
                 $onOutput('err', "download:progress=35.0%\n");
             }
@@ -151,17 +160,27 @@ it('preserves the YouTube provider contract', function (): void {
     ytAssert($plugin->resolve(new SourceDescriptor(['url' => OptionValue::text('https://www.youtube.com/playlist?list=PL123')]))->artworkReference === 'https://yt3.ggpht.com/channel-avatar', 'playlist channel avatar resolution failed');
     ytAssert($plugin->resolve(new SourceDescriptor(['url' => OptionValue::text('https://youtu.be/abc123')]))->title === 'Video', 'video title resolution failed');
     $items = $plugin->discover('UCfixture123', \Stashd\PluginSdk\DiscoveryIntent::Refresh);
-    ytAssert(count($items) === 2 && $items[0]->id === 'vid1' && $items[0]->durationSeconds === 4500, 'Atom discovery enrichment failed');
+    ytAssert(count($items) === 2 && $items[0]->id === 'vid1' && $items[0]->durationSeconds === null, 'Atom refresh should remain lightweight');
+    ytAssert($items[0]->description === 'Description' && $items[0]->artworkReference === 'https://i.ytimg.com/vid1.jpg', 'Atom metadata was not preserved');
     ytAssert($progress->discovered === ['vid1', 'vid2'], 'discovery items were not reported incrementally');
     $http->feedMissing = true;
-    ytAssert(count($plugin->discover('UCfixture123', \Stashd\PluginSdk\DiscoveryIntent::Refresh)) === 2, 'yt-dlp fallback for a missing Atom feed failed');
+    $refreshFailed = false;
+
+    try {
+        $plugin->discover('UCfixture123', \Stashd\PluginSdk\DiscoveryIntent::Refresh);
+    } catch (RuntimeException) {
+        $refreshFailed = true;
+    }
+
+    ytAssert($refreshFailed, 'refresh should not escalate to broad discovery');
     $http->feedMissing = false;
     $playlistItems = $plugin->discover('playlist:PL123', \Stashd\PluginSdk\DiscoveryIntent::Refresh);
-    ytAssert(count($playlistItems) === 1 && $playlistItems[0]->id === 'backfill1', 'playlist refresh fallback failed');
+    ytAssert(count($playlistItems) === 1 && $playlistItems[0]->id === 'playlist1', 'playlist feed refresh failed');
     $helper->completeExitCode = 1;
     $helper->completeStderr = 'ERROR: [youtube] blocked1: The uploader has not made this video available in your country';
     $backfill = $plugin->discover('UCfixture123', \Stashd\PluginSdk\DiscoveryIntent::Complete);
     ytAssert(count($backfill) === 2 && $backfill[0]->id === 'backfill1' && $backfill[1]->upstreamState === 'region_blocked', 'yt-dlp incomplete discovery item failed');
+    ytAssert($backfill[0]->publishedAt === '2026-01-01T00:00:00+00:00' && $backfill[0]->durationSeconds === 321, 'yt-dlp fallback metadata enrichment failed');
     $acquired = $plugin->acquire($items[0], new AcquisitionOptions(MediaKind::Video));
     ytAssert(count($acquired->artifacts) === 3, 'helper artifacts were not classified');
     ytAssert($acquired->artifacts[0]->role === 'primary' && in_array('--format', $helper->args, true), 'video acquisition strategy failed');
