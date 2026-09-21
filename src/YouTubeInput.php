@@ -535,6 +535,15 @@ final class YouTubeInput implements InputPlugin
             return ['kind' => 'playlist', 'id' => $query['list'], 'canonical' => $this->url('https://www.youtube.com/playlist', ['list' => $query['list']])];
         }
 
+        if (str_starts_with($path, '/show/')) {
+            $showId = trim(substr($path, 6), '/');
+            $playlistId = str_starts_with($showId, 'VL') ? substr($showId, 2) : $showId;
+
+            if (str_starts_with($playlistId, 'PL') && strlen($playlistId) > 2) {
+                return ['kind' => 'playlist', 'id' => $playlistId, 'canonical' => $this->url('https://www.youtube.com/playlist', ['list' => $playlistId])];
+            }
+        }
+
         if (str_starts_with($path, '/channel/')) {
             $id = trim(substr($path, 9), '/');
 

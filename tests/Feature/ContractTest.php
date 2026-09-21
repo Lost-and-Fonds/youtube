@@ -182,6 +182,7 @@ it('preserves the YouTube provider contract', function (): void {
     $plugin = new YouTubeInput(new PluginContext(http: $http, progress: $progress, staging: $stage, helpers: $helper));
     ytAssert($plugin->resolve(new SourceDescriptor(['url' => OptionValue::text('https://youtu.be/abc123')]))->id === 'video:abc123', 'short URL identity failed');
     ytAssert($plugin->resolve(new SourceDescriptor(['url' => OptionValue::text('https://www.youtube.com/playlist?list=PL123')]))->id === 'playlist:PL123', 'playlist identity failed');
+    ytAssert($plugin->resolve(new SourceDescriptor(['url' => OptionValue::text('https://www.youtube.com/show/VLPLT4CnSLg99ng?season=1&sbp=ignored')]))->id === 'playlist:PLT4CnSLg99ng', 'show URL identity failed');
     $channel = $plugin->resolve(new SourceDescriptor(['url' => OptionValue::text('https://www.youtube.com/@fixture')]));
     ytAssert($channel->id === 'UCfixture123' && $channel->title === 'Channel', 'handle resolution failed');
     ytAssert($plugin->resolve(new SourceDescriptor(['url' => OptionValue::text('https://www.youtube.com/playlist?list=PL123')]))->title === 'Playlist', 'playlist title resolution failed');
