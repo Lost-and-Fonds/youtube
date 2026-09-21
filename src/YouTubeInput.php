@@ -396,7 +396,7 @@ final class YouTubeInput implements InputPlugin
             $paths = is_array($metadata) ? $this->pathsFromMetadata($metadata) : [$line];
 
             foreach (array_unique($paths) as $path) {
-                if (! is_string($path) || $path === '' || str_contains($path, '/') === false || isset($seenPaths[$path])) {
+                if ($path === '' || str_contains($path, '/') === false || isset($seenPaths[$path])) {
                     continue;
                 }
                 $seenPaths[$path] = true;
@@ -432,7 +432,7 @@ final class YouTubeInput implements InputPlugin
         return new AcquisitionResult($artifacts);
     }
 
-    /** @param array $metadata
+    /** @param array<string, mixed> $metadata
      * @return list<string>
      */
     private function pathsFromMetadata(array $metadata): array
