@@ -393,9 +393,10 @@ final class YouTubeInput implements InputPlugin
             }
 
             $metadata = json_decode($line, true);
-            $paths = is_array($metadata) ? $this->pathsFromMetadata($metadata) : [$line];
+            $paths = is_array($metadata) ? $this->pathsFromMetadata($metadata) : [['path' => $line, 'language' => null]];
 
-            foreach (array_unique($paths) as $path) {
+            foreach ($paths as $discovered) {
+                $path = $discovered['path'];
                 $name = $this->stagingName($path);
 
                 if ($name === null || isset($seenPaths[$path])) {
@@ -409,7 +410,7 @@ final class YouTubeInput implements InputPlugin
                     continue;
                 }
                 $staged = $this->context->staging->stage($name, $this->mediaType($name));
-                $artifacts[] = new StagedArtifact($staged->reference, $staged->mediaType, $staged->sizeBytes, $role);
+                $artifacts[] = new StagedArtifact($staged->reference, $staged->mediaType, $staged->sizeBytes, $role, $discovered['language']);
             }
         }
 
@@ -434,7 +435,7 @@ final class YouTubeInput implements InputPlugin
     }
 
     /** @param array<mixed, mixed> $metadata
-     * @return list<string>
+     * @return list<array{path:string, language:?string}>
      */
     private function pathsFromMetadata(array $metadata): array
     {
@@ -442,18 +443,26 @@ final class YouTubeInput implements InputPlugin
 
         foreach ([$metadata['infojson_filename'] ?? null, $metadata['filepath'] ?? null] as $path) {
             if (is_string($path)) {
-                $paths[] = $path;
+                $paths[] = ['path' => $path, 'language' => null];
             }
         }
 
-        foreach ([$metadata['requested_subtitles'] ?? null, $metadata['thumbnails'] ?? null] as $entries) {
-            if (! is_array($entries)) {
-                continue;
-            }
+        $subtitles = $metadata['requested_subtitles'] ?? null;
 
-            foreach ($entries as $entry) {
+        if (is_array($subtitles)) {
+            foreach ($subtitles as $language => $entry) {
+                if (is_string($language) && is_array($entry) && is_string($entry['filepath'] ?? null)) {
+                    $paths[] = ['path' => $entry['filepath'], 'language' => $language];
+                }
+            }
+        }
+
+        $thumbnails = $metadata['thumbnails'] ?? null;
+
+        if (is_array($thumbnails)) {
+            foreach ($thumbnails as $entry) {
                 if (is_array($entry) && is_string($entry['filepath'] ?? null)) {
-                    $paths[] = $entry['filepath'];
+                    $paths[] = ['path' => $entry['filepath'], 'language' => null];
                 }
             }
         }

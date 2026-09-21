@@ -8,16 +8,16 @@
     "packages": [
         {
             "name": "stashd/php-sdk",
-            "version": "0.3.2",
+            "version": "0.3.3",
             "source": {
                 "type": "git",
                 "url": "https://github.com/Lost-and-Fonds/stashd-php-sdk.git",
-                "reference": "0d318d20011a3c97aa1cd31dc4656b24de6de876"
+                "reference": "24bf3b5ca7122f592de0194a92eeb8352d8dab54"
             },
             "dist": {
                 "type": "zip",
-                "url": "https://api.github.com/repos/Lost-and-Fonds/stashd-php-sdk/zipball/0d318d20011a3c97aa1cd31dc4656b24de6de876",
-                "reference": "0d318d20011a3c97aa1cd31dc4656b24de6de876",
+                "url": "https://api.github.com/repos/Lost-and-Fonds/stashd-php-sdk/zipball/24bf3b5ca7122f592de0194a92eeb8352d8dab54",
+                "reference": "24bf3b5ca7122f592de0194a92eeb8352d8dab54",
                 "shasum": ""
             },
             "require": {
