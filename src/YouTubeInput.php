@@ -215,7 +215,9 @@ final class YouTubeInput implements InputPlugin
             $items[] = $item;
         }
 
-        return $this->filter($this->enrichSizes($items, $this->bool($options, 'skip_size_enrichment') || $this->bool($options, 'skip_enrichment')), $options);
+        $items = $this->filter($items, $options);
+
+        return $this->enrichSizes($items, $this->bool($options, 'skip_size_enrichment') || $this->bool($options, 'skip_enrichment'));
     }
 
     /** @return list<DiscoveredItem> */

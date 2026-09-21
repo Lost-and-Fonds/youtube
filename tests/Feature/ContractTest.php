@@ -104,6 +104,8 @@ it('preserves the YouTube provider contract', function (): void {
         public string $completeStderr = '';
         public bool $captionMissing = false;
         public string $captionPath = 'youtube-vid1.en.vtt';
+        /** @var list<list<string>> */
+        public array $metadataRequests = [];
         /** @var array<string, string> */
         public array $captionPaths = ['en' => 'youtube-vid1.en.vtt'];
         public function run(string $name, array $arguments = [], ?callable $onOutput = null): HelperResult
@@ -112,6 +114,8 @@ it('preserves the YouTube provider contract', function (): void {
             $this->args = $arguments;
 
             if (in_array('--dump-json', $arguments, true)) {
+                $this->metadataRequests[] = $arguments;
+
                 return new HelperResult(0, json_encode(['id' => 'backfill1', 'title' => 'Backfill item', 'upload_date' => '20260101', 'duration' => 321, 'filesize_approx' => 1234], JSON_THROW_ON_ERROR));
             }
 
@@ -209,6 +213,7 @@ it('preserves the YouTube provider contract', function (): void {
     $helper->completeStderr = '';
     $withoutShorts = $plugin->discover('UCfixture123', \Stashd\PluginSdk\DiscoveryIntent::Complete, [new InputOption('include_shorts', OptionValue::boolean(false))]);
     ytAssert(count($withoutShorts) === 1 && $withoutShorts[0]->id === 'vid2', 'short videos were not filtered from complete discovery');
+    ytAssert(! in_array('https://www.youtube.com/watch?v=vid1', end($helper->metadataRequests), true), 'short videos were metadata-enriched before filtering');
     $withShorts = $plugin->discover('UCfixture123', \Stashd\PluginSdk\DiscoveryIntent::Complete, [new InputOption('include_shorts', OptionValue::boolean(true))]);
     ytAssert(count($withShorts) === 2 && $withShorts[0]->id === 'vid1', 'short videos were not restored when enabled');
     $acquired = $plugin->acquire($items[0], new AcquisitionOptions(MediaKind::Video));
