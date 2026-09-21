@@ -396,12 +396,13 @@ final class YouTubeInput implements InputPlugin
             $paths = is_array($metadata) ? $this->pathsFromMetadata($metadata) : [$line];
 
             foreach (array_unique($paths) as $path) {
-                if ($path === '' || str_contains($path, '/') === false || isset($seenPaths[$path])) {
+                $name = $this->stagingName($path);
+
+                if ($name === null || isset($seenPaths[$path])) {
                     continue;
                 }
                 $seenPaths[$path] = true;
 
-                $name = basename($path);
                 $role = $this->role($name, $options->mediaKind);
 
                 if ($role === null) {
@@ -458,6 +459,32 @@ final class YouTubeInput implements InputPlugin
         }
 
         return $paths;
+    }
+
+    private function stagingName(string $path): ?string
+    {
+        $path = str_replace('\\', '/', trim($path));
+
+        if ($path === '' || str_contains($path, "\0")) {
+            return null;
+        }
+
+        if (str_starts_with($path, '/')) {
+            if (! str_starts_with($path, '/staging/')) {
+                return null;
+            }
+            $path = substr($path, strlen('/staging/'));
+        }
+
+        foreach (explode('/', $path) as $segment) {
+            if ($segment === '' || $segment === '.' || $segment === '..') {
+                return null;
+            }
+        }
+
+        $name = basename($path);
+
+        return $name === '' || $name === '.' || $name === '..' ? null : $name;
     }
 
     /** @return list<InputOption> */

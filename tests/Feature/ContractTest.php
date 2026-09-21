@@ -103,6 +103,7 @@ it('preserves the YouTube provider contract', function (): void {
         public int $completeExitCode = 0;
         public string $completeStderr = '';
         public bool $captionMissing = false;
+        public string $captionPath = 'youtube-vid1.en.vtt';
         public function run(string $name, array $arguments = [], ?callable $onOutput = null): HelperResult
         {
             ytAssert($name === 'yt-dlp', 'wrong helper');
@@ -135,7 +136,7 @@ it('preserves the YouTube provider contract', function (): void {
                 ytAssert($print === ['after_video:%(.{requested_subtitles,thumbnails,infojson_filename})j'], 'caption metadata print template was not configured correctly');
 
                 return new HelperResult(0, json_encode([
-                    'requested_subtitles' => $this->captionMissing ? [] : ['en' => ['filepath' => '/staging/youtube-vid1.en.vtt']],
+                    'requested_subtitles' => $this->captionMissing ? [] : ['en' => ['filepath' => $this->captionPath]],
                 ], JSON_THROW_ON_ERROR));
             }
 
@@ -145,7 +146,7 @@ it('preserves the YouTube provider contract', function (): void {
 
                 return new HelperResult(0, "/staging/youtube-vid1.mp4\n/staging/youtube-vid1.info.json\n/staging/youtube-vid1.jpg\n" . json_encode([
                     'requested_subtitles' => [
-                        'en' => ['filepath' => '/staging/youtube-vid1.en.vtt'],
+                        'en' => ['filepath' => $this->captionPath],
                     ],
                 ], JSON_THROW_ON_ERROR));
             }
@@ -215,6 +216,9 @@ it('preserves the YouTube provider contract', function (): void {
     $captionOnly = $plugin->acquire($items[0], new AcquisitionOptions(MediaKind::Video, [new InputOption('include_captions', OptionValue::boolean(true))], [ArtifactRole::Captions]));
     ytAssert(in_array('--skip-download', $helper->args, true) && in_array('--write-subs', $helper->args, true), 'role-scoped caption acquisition was not passed to yt-dlp');
     ytAssert(count($captionOnly->artifacts) === 1 && $captionOnly->artifacts[0]->role === 'captions' && $captionOnly->artifacts[0]->mediaType === 'text/vtt' && str_ends_with($captionOnly->artifacts[0]->reference, '.vtt'), 'caption-only acquisition did not return a staged VTT artifact');
+    $helper->captionPath = '../youtube-vid1.en.vtt';
+    $unsafe = $plugin->acquire($items[0], new AcquisitionOptions(MediaKind::Video, [new InputOption('include_captions', OptionValue::boolean(true))], [ArtifactRole::Captions]));
+    ytAssert($unsafe->artifacts === [] && count($unsafe->unavailable) === 1 && $unsafe->unavailable[0]->role === ArtifactRole::Captions, 'caption path traversal was accepted');
     $helper->captionMissing = true;
     $missing = $plugin->acquire($items[0], new AcquisitionOptions(MediaKind::Video, [new InputOption('include_captions', OptionValue::boolean(true))], [ArtifactRole::Captions]));
     ytAssert($missing->artifacts === [] && count($missing->unavailable) === 1 && $missing->unavailable[0]->role === ArtifactRole::Captions && $missing->unavailable[0]->permanent, 'missing requested captions did not remain unavailable');
