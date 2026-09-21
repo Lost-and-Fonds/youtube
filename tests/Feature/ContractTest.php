@@ -208,12 +208,12 @@ it('preserves the YouTube provider contract', function (): void {
     $helper->completeStderr = 'ERROR: [youtube] blocked1: The uploader has not made this video available in your country';
     $backfill = $plugin->discover('UCfixture123', \Stashd\PluginSdk\DiscoveryIntent::Complete);
     ytAssert(count($backfill) === 2 && $backfill[0]->id === 'backfill1' && $backfill[1]->upstreamState === 'region_blocked', 'yt-dlp incomplete discovery item failed');
-    ytAssert($backfill[0]->publishedAt === '2026-01-01T00:00:00+00:00' && $backfill[0]->durationSeconds === 321, 'yt-dlp fallback metadata enrichment failed');
+    ytAssert($backfill[0]->publishedAt === '2026-01-01T00:00:00+00:00' && $backfill[0]->durationSeconds === null, 'complete discovery performed full metadata enrichment');
     $helper->completeExitCode = 0;
     $helper->completeStderr = '';
     $withoutShorts = $plugin->discover('UCfixture123', \Stashd\PluginSdk\DiscoveryIntent::Complete, [new InputOption('include_shorts', OptionValue::boolean(false))]);
     ytAssert(count($withoutShorts) === 1 && $withoutShorts[0]->id === 'vid2', 'short videos were not filtered from complete discovery');
-    ytAssert(! in_array('https://www.youtube.com/watch?v=vid1', end($helper->metadataRequests), true), 'short videos were metadata-enriched before filtering');
+    ytAssert($helper->metadataRequests === [], 'complete discovery performed full metadata enrichment');
     $withShorts = $plugin->discover('UCfixture123', \Stashd\PluginSdk\DiscoveryIntent::Complete, [new InputOption('include_shorts', OptionValue::boolean(true))]);
     ytAssert(count($withShorts) === 2 && $withShorts[0]->id === 'vid1', 'short videos were not restored when enabled');
     $acquired = $plugin->acquire($items[0], new AcquisitionOptions(MediaKind::Video));
