@@ -102,6 +102,7 @@ it('preserves the YouTube provider contract', function (): void {
         /** @var list<string> */ public array $args = [];
         public int $completeExitCode = 0;
         public string $completeStderr = '';
+        public bool $captionMissing = false;
         public function run(string $name, array $arguments = [], ?callable $onOutput = null): HelperResult
         {
             ytAssert($name === 'yt-dlp', 'wrong helper');
@@ -127,6 +128,20 @@ it('preserves the YouTube provider contract', function (): void {
                     : [['id' => 'backfill1', 'title' => 'Backfill item', 'upload_date' => '20260101', 'filesize_approx' => 1234]];
 
                 return new HelperResult($this->completeExitCode, json_encode(['entries' => $entries], JSON_THROW_ON_ERROR), $this->completeStderr);
+            }
+
+            if (in_array('--skip-download', $arguments, true)) {
+                return new HelperResult(0, json_encode([
+                    'requested_subtitles' => $this->captionMissing ? [] : ['en' => ['filepath' => '/staging/youtube-vid1.en.vtt']],
+                ], JSON_THROW_ON_ERROR));
+            }
+
+            if (in_array('--write-auto-subs', $arguments, true)) {
+                return new HelperResult(0, "/staging/youtube-vid1.mp4\n/staging/youtube-vid1.info.json\n/staging/youtube-vid1.jpg\n" . json_encode([
+                    'requested_subtitles' => [
+                        'en' => ['filepath' => '/staging/youtube-vid1.en.vtt'],
+                    ],
+                ], JSON_THROW_ON_ERROR));
             }
 
             return new HelperResult(0, "/staging/youtube-vid1.mp4\n/staging/youtube-vid1.info.json\n/staging/youtube-vid1.jpg\n");
@@ -188,9 +203,14 @@ it('preserves the YouTube provider contract', function (): void {
     ytAssert($ffmpegLocation !== false && ($helper->args[$ffmpegLocation + 1] ?? null) === '/plugin/stashd-plugin/helpers', 'bundled ffmpeg path was not configured');
     ytAssert(in_array('--write-subs', $helper->args, true) && ! in_array('--write-auto-subs', $helper->args, true), 'creator captions were not enabled by default');
     ytAssert(in_array(0.35, $progress->fractions, true), 'yt-dlp progress was not translated');
-    $plugin->acquire($items[0], new AcquisitionOptions(MediaKind::Video, [new InputOption('include_auto_captions', OptionValue::boolean(true))]));
+    $automatic = $plugin->acquire($items[0], new AcquisitionOptions(MediaKind::Video, [new InputOption('include_auto_captions', OptionValue::boolean(true))]));
     ytAssert(in_array('--write-subs', $helper->args, true) && in_array('--write-auto-subs', $helper->args, true), 'automatic captions opt-in was not passed to yt-dlp');
-    $plugin->acquire($items[0], new AcquisitionOptions(MediaKind::Video, [new InputOption('include_captions', OptionValue::boolean(true))], [ArtifactRole::Captions]));
+    ytAssert(count(array_filter($automatic->artifacts, static fn(StagedArtifact $artifact): bool => $artifact->role === 'captions' && $artifact->mediaType === 'text/vtt')) === 1, 'automatic caption acquisition did not return a staged VTT artifact');
+    $captionOnly = $plugin->acquire($items[0], new AcquisitionOptions(MediaKind::Video, [new InputOption('include_captions', OptionValue::boolean(true))], [ArtifactRole::Captions]));
     ytAssert(in_array('--skip-download', $helper->args, true) && in_array('--write-subs', $helper->args, true), 'role-scoped caption acquisition was not passed to yt-dlp');
+    ytAssert(count($captionOnly->artifacts) === 1 && $captionOnly->artifacts[0]->role === 'captions' && $captionOnly->artifacts[0]->mediaType === 'text/vtt' && str_ends_with($captionOnly->artifacts[0]->reference, '.vtt'), 'caption-only acquisition did not return a staged VTT artifact');
+    $helper->captionMissing = true;
+    $missing = $plugin->acquire($items[0], new AcquisitionOptions(MediaKind::Video, [new InputOption('include_captions', OptionValue::boolean(true))], [ArtifactRole::Captions]));
+    ytAssert($missing->artifacts === [] && count($missing->unavailable) === 1 && $missing->unavailable[0]->role === ArtifactRole::Captions && $missing->unavailable[0]->permanent, 'missing requested captions did not remain unavailable');
     expect(true)->toBeTrue();
 });

@@ -336,7 +336,7 @@ final class YouTubeInput implements InputPlugin
         $roles = $requested === null ? [ArtifactRole::Primary, ArtifactRole::Captions, ArtifactRole::Artwork, ArtifactRole::Metadata] : $requested;
         $wantsPrimary = in_array(ArtifactRole::Primary, $roles, true);
         $output = 'youtube-' . preg_replace('/[^A-Za-z0-9_-]/', '_', $item->id);
-        $args = ['--no-playlist', '--newline', '--no-warnings', '--progress', '--restrict-filenames', '--progress-template', 'download:progress=%(progress._percent_str)s', '--ffmpeg-location', '/plugin/stashd-plugin/helpers', '--print', 'after_move:filepath', '--output', $output . '.%(ext)s'];
+        $args = ['--no-playlist', '--newline', '--no-warnings', '--progress', '--restrict-filenames', '--progress-template', 'download:progress=%(progress._percent_str)s', '--ffmpeg-location', '/plugin/stashd-plugin/helpers', '--print', 'after_move:filepath', '--print', 'after_move:{requested_subtitles,thumbnails,infojson_filename}', '--output', $output . '.%(ext)s'];
 
         if (! $wantsPrimary) {
             $args[] = '--skip-download';
@@ -383,21 +383,33 @@ final class YouTubeInput implements InputPlugin
             throw new RuntimeException($result->exitCode === 124 ? 'acquisition timed out' : 'acquisition helper failed');
         }
         $artifacts = [];
+        $seenPaths = [];
 
         foreach (preg_split('/\R+/', $result->stdout) ?: [] as $line) {
-            $path = trim($line);
+            $line = trim($line);
 
-            if ($path === '' || str_contains($path, '/') === false) {
+            if ($line === '') {
                 continue;
             }
-            $name = basename($path);
-            $role = $this->role($name, $options->mediaKind);
 
-            if ($role === null) {
-                continue;
+            $metadata = json_decode($line, true);
+            $paths = is_array($metadata) ? $this->pathsFromMetadata($metadata) : [$line];
+
+            foreach (array_unique($paths) as $path) {
+                if (! is_string($path) || $path === '' || str_contains($path, '/') === false || isset($seenPaths[$path])) {
+                    continue;
+                }
+                $seenPaths[$path] = true;
+
+                $name = basename($path);
+                $role = $this->role($name, $options->mediaKind);
+
+                if ($role === null) {
+                    continue;
+                }
+                $staged = $this->context->staging->stage($name, $this->mediaType($name));
+                $artifacts[] = new StagedArtifact($staged->reference, $staged->mediaType, $staged->sizeBytes, $role);
             }
-            $staged = $this->context->staging->stage($name, $this->mediaType($name));
-            $artifacts[] = new StagedArtifact($staged->reference, $staged->mediaType, $staged->sizeBytes, $role);
         }
 
         if ($requested === null && ! array_filter($artifacts, static fn(StagedArtifact $artifact): bool => $artifact->role === 'primary')) {
@@ -418,6 +430,34 @@ final class YouTubeInput implements InputPlugin
         }
 
         return new AcquisitionResult($artifacts);
+    }
+
+    /** @param array<string, mixed> $metadata
+     * @return list<string>
+     */
+    private function pathsFromMetadata(array $metadata): array
+    {
+        $paths = [];
+
+        foreach ([$metadata['infojson_filename'] ?? null, $metadata['filepath'] ?? null] as $path) {
+            if (is_string($path)) {
+                $paths[] = $path;
+            }
+        }
+
+        foreach ([$metadata['requested_subtitles'] ?? null, $metadata['thumbnails'] ?? null] as $entries) {
+            if (! is_array($entries)) {
+                continue;
+            }
+
+            foreach ($entries as $entry) {
+                if (is_array($entry) && is_string($entry['filepath'] ?? null)) {
+                    $paths[] = $entry['filepath'];
+                }
+            }
+        }
+
+        return $paths;
     }
 
     /** @return list<InputOption> */
