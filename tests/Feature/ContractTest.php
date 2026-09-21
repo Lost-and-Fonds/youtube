@@ -127,7 +127,7 @@ it('preserves the YouTube provider contract', function (): void {
 
             if (str_contains((string) end($arguments), '/channel/')) {
                 $entries = $this->completeExitCode === 0
-                    ? [['id' => 'vid1', 'title' => 'One'], ['id' => 'vid2', 'title' => 'Two']]
+                    ? [['id' => 'vid1', 'title' => 'One', 'duration' => 45], ['id' => 'vid2', 'title' => 'Two', 'duration' => 181]]
                     : [['id' => 'backfill1', 'title' => 'Backfill item', 'upload_date' => '20260101', 'filesize_approx' => 1234]];
 
                 return new HelperResult($this->completeExitCode, json_encode(['entries' => $entries], JSON_THROW_ON_ERROR), $this->completeStderr);
@@ -205,6 +205,12 @@ it('preserves the YouTube provider contract', function (): void {
     $backfill = $plugin->discover('UCfixture123', \Stashd\PluginSdk\DiscoveryIntent::Complete);
     ytAssert(count($backfill) === 2 && $backfill[0]->id === 'backfill1' && $backfill[1]->upstreamState === 'region_blocked', 'yt-dlp incomplete discovery item failed');
     ytAssert($backfill[0]->publishedAt === '2026-01-01T00:00:00+00:00' && $backfill[0]->durationSeconds === 321, 'yt-dlp fallback metadata enrichment failed');
+    $helper->completeExitCode = 0;
+    $helper->completeStderr = '';
+    $withoutShorts = $plugin->discover('UCfixture123', \Stashd\PluginSdk\DiscoveryIntent::Complete, [new InputOption('include_shorts', OptionValue::boolean(false))]);
+    ytAssert(count($withoutShorts) === 1 && $withoutShorts[0]->id === 'vid2', 'short videos were not filtered from complete discovery');
+    $withShorts = $plugin->discover('UCfixture123', \Stashd\PluginSdk\DiscoveryIntent::Complete, [new InputOption('include_shorts', OptionValue::boolean(true))]);
+    ytAssert(count($withShorts) === 2 && $withShorts[0]->id === 'vid1', 'short videos were not restored when enabled');
     $acquired = $plugin->acquire($items[0], new AcquisitionOptions(MediaKind::Video));
     ytAssert(count($acquired->artifacts) === 3, 'helper artifacts were not classified');
     ytAssert($acquired->artifacts[0]->role === 'primary' && in_array('--format', $helper->args, true), 'video acquisition strategy failed');

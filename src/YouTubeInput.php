@@ -27,6 +27,8 @@ use Uri\Rfc3986\Uri;
 
 final class YouTubeInput implements InputPlugin
 {
+    private const SHORT_MAX_DURATION_SECONDS = 180;
+
     /** @var array<string, true> */
     private array $reportedItems = [];
 
@@ -679,7 +681,10 @@ final class YouTubeInput implements InputPlugin
         $live = $this->bool($options, 'include_live');
 
         return array_values(array_filter($items, static function (DiscoveredItem $item) use ($shorts, $live): bool {
-            if ($item->kind === 'short' && ! $shorts) {
+            $isShort = $item->kind === 'short'
+                || ($item->durationSeconds !== null && $item->durationSeconds <= self::SHORT_MAX_DURATION_SECONDS);
+
+            if ($isShort && ! $shorts) {
                 return false;
             }
 
