@@ -131,12 +131,18 @@ it('preserves the YouTube provider contract', function (): void {
             }
 
             if (in_array('--skip-download', $arguments, true)) {
+                $print = array_values(array_filter($arguments, static fn(string $argument): bool => str_starts_with($argument, 'after_video:')));
+                ytAssert($print === ['after_video:%(.{requested_subtitles,thumbnails,infojson_filename})j'], 'caption metadata print template was not configured correctly');
+
                 return new HelperResult(0, json_encode([
                     'requested_subtitles' => $this->captionMissing ? [] : ['en' => ['filepath' => '/staging/youtube-vid1.en.vtt']],
                 ], JSON_THROW_ON_ERROR));
             }
 
             if (in_array('--write-auto-subs', $arguments, true)) {
+                $print = array_values(array_filter($arguments, static fn(string $argument): bool => str_starts_with($argument, 'after_video:')));
+                ytAssert($print === ['after_video:%(.{requested_subtitles,thumbnails,infojson_filename})j'], 'caption metadata print template was not configured correctly');
+
                 return new HelperResult(0, "/staging/youtube-vid1.mp4\n/staging/youtube-vid1.info.json\n/staging/youtube-vid1.jpg\n" . json_encode([
                     'requested_subtitles' => [
                         'en' => ['filepath' => '/staging/youtube-vid1.en.vtt'],
