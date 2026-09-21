@@ -432,7 +432,7 @@ final class YouTubeInput implements InputPlugin
         return new AcquisitionResult($artifacts);
     }
 
-    /** @param array<string, mixed> $metadata
+    /** @param array $metadata
      * @return list<string>
      */
     private function pathsFromMetadata(array $metadata): array
