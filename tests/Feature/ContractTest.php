@@ -62,20 +62,20 @@ it('preserves the YouTube provider contract', function (): void {
                 return new HttpResponse(200, inlineBody: '{"title":"Video","thumbnail_url":"https://i.ytimg.com/x.jpg"}');
             }
 
+            if (str_contains($url, 'googleapis.com/youtube/v3/playlistItems')) {
+                return new HttpResponse(200, inlineBody: '{"items":[{"id":"playlist1","snippet":{"resourceId":{"videoId":"vid1"},"title":"One","publishedAt":"2026-01-01T00:00:00Z"}},{"id":"playlist2","snippet":{"resourceId":{"videoId":"vid2"},"title":"Two","publishedAt":"2026-01-02T00:00:00Z"}}],"nextPageToken":null}');
+            }
+
+            if (str_contains($url, 'googleapis.com/youtube/v3/videos')) {
+                return new HttpResponse(200, inlineBody: '{"items":[{"id":"vid1","snippet":{"title":"One","publishedAt":"2026-01-01T00:00:00Z"},"contentDetails":{"duration":"PT45S"}},{"id":"vid2","snippet":{"title":"Two","publishedAt":"2026-01-02T00:00:00Z"},"contentDetails":{"duration":"PT3M1S"}}]}');
+            }
+
             if (str_contains($url, 'playlist')) {
                 return new HttpResponse(200, inlineBody: '<meta property="og:title" content="Playlist"><script>"avatar":{"avatarViewModel":{"image":{"sources":[{"url":"https://yt3.ggpht.com/channel-avatar"}]}}}</script>');
             }
 
             if (str_contains($url, 'channel/') || str_contains($url, '@fixture')) {
                 return new HttpResponse(200, inlineBody: '<meta property="og:title" content="Channel"><script>"channelId":"UCfixture123"</script>');
-            }
-
-            if (str_contains($url, 'googleapis.com/youtube/v3/playlistItems')) {
-                return new HttpResponse(404);
-            }
-
-            if (str_contains($url, 'googleapis.com/youtube/v3/videos')) {
-                return new HttpResponse(200, inlineBody: '{"items":[{"id":"vid1","snippet":{"title":"One","publishedAt":"2026-01-01T00:00:00Z"},"contentDetails":{"duration":"PT1H15M"}}]}');
             }
 
             return new HttpResponse(200, inlineBody: '{"items":[],"nextPageToken":null}');
@@ -205,6 +205,11 @@ it('preserves the YouTube provider contract', function (): void {
     $http->feedMissing = false;
     $playlistItems = $plugin->discover('playlist:PL123', \Stashd\PluginSdk\DiscoveryIntent::Refresh);
     ytAssert(count($playlistItems) === 1 && $playlistItems[0]->id === 'playlist1', 'playlist feed refresh failed');
+    $helper->metadataRequests = [];
+    $apiItems = $plugin->discover('playlist:PL123', \Stashd\PluginSdk\DiscoveryIntent::Complete, [new InputOption('__stashd_complete_credential_available', OptionValue::boolean(true))]);
+    ytAssert(count($apiItems) === 1 && $apiItems[0]->id === 'vid2', 'API discovery did not filter short videos before metadata enrichment');
+    ytAssert(count($helper->metadataRequests) === 1 && in_array('https://www.youtube.com/watch?v=vid2', $helper->metadataRequests[0], true) && ! in_array('https://www.youtube.com/watch?v=vid1', $helper->metadataRequests[0], true), 'filtered API items still entered yt-dlp metadata enrichment');
+    $helper->metadataRequests = [];
     $helper->completeExitCode = 1;
     $helper->completeStderr = 'ERROR: [youtube] blocked1: The uploader has not made this video available in your country';
     $backfill = $plugin->discover('UCfixture123', \Stashd\PluginSdk\DiscoveryIntent::Complete);
