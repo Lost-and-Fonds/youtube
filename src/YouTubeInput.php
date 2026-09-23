@@ -28,6 +28,9 @@ use Uri\Rfc3986\Uri;
 final class YouTubeInput implements InputPlugin
 {
     private const SHORT_MAX_DURATION_SECONDS = 180;
+    private const ESTIMATOR_HISTORY_LIMIT = 25;
+
+    private const VIDEO_BOOTSTRAP_BITS_PER_SECOND = ['sd' => 700000, 'hd' => 1200000, 'fhd' => 2200000, 'qhd' => 3500000, 'uhd' => 5000000];
 
     /** @var array<string, true> */
     private array $reportedItems = [];
@@ -70,11 +73,7 @@ final class YouTubeInput implements InputPlugin
             $title = is_string($payload['title'] ?? null) && $payload['title'] !== '' ? $payload['title'] : "YouTube Video {$id}";
         }
 
-        [$sizeBytes, $sizeEstimated] = $parsed['kind'] === 'video' && $this->context->helpers !== null
-            ? $this->sizeEstimate($parsed['canonical'])
-            : [null, false];
-
-        return new ResolvedInput("{$parsed['kind']}:{$id}", $parsed['canonical'], $parsed['kind'], $title, null, null, $sizeBytes, $sizeEstimated);
+        return new ResolvedInput("{$parsed['kind']}:{$id}", $parsed['canonical'], $parsed['kind'], $title);
     }
 
     /**
@@ -160,13 +159,9 @@ final class YouTubeInput implements InputPlugin
             $token = is_string($payload['nextPageToken'] ?? null) ? $payload['nextPageToken'] : null;
         } while ($token !== null);
 
-        if (! $this->bool($options, 'skip_enrichment')) {
-            $items = $this->enrich($items);
-        }
+        $items = $this->enrich($items);
 
-        $items = $this->filter($items, $options);
-
-        return $this->enrichSizes($items, $this->bool($options, 'skip_size_enrichment') || $this->bool($options, 'skip_enrichment'));
+        return $this->filter($items, $options);
     }
 
     /**
@@ -251,61 +246,6 @@ final class YouTubeInput implements InputPlugin
     }
 
     /**
-     * @param list<DiscoveredItem> $items
-     * @return list<DiscoveredItem>
-     */
-    private function enrichSizes(array $items, bool $skipSizeEnrichment = false): array
-    {
-        if ($this->context->helpers === null || $items === []) {
-            return $items;
-        }
-
-        try {
-            $sizes = [];
-            $batches = array_chunk($items, 20);
-
-            foreach ($batches as $index => $batch) {
-                $this->context->progress->report(sprintf('Inspecting video metadata (%d of %d)', $index + 1, count($batches)), $index / max(1, count($batches)));
-                $arguments = ['--ignore-errors', '--dump-json', '--skip-download', '--no-warnings', '--format', 'bestvideo+bestaudio/best', ...array_map(static fn(DiscoveredItem $item): string => $item->reference, $batch)];
-                $result = $this->context->helpers->run('yt-dlp', $arguments);
-
-                foreach (preg_split('/\R+/', $result->stdout) ?: [] as $line) {
-                    $entry = $this->object(json_decode(trim($line), true));
-
-                    if (is_array($entry) && is_string($entry['id'] ?? null)) {
-                        $sizes[$entry['id']] = $entry;
-                    }
-                }
-                $this->context->progress->report(sprintf('Inspected video metadata (%d of %d)', $index + 1, count($batches)), ($index + 1) / max(1, count($batches)));
-            }
-
-            return array_map(function (DiscoveredItem $item) use ($sizes, $skipSizeEnrichment): DiscoveredItem {
-                $metadata = $sizes[$item->id] ?? [];
-                $sizeBytes = $item->sizeBytes;
-                $sizeEstimated = $item->sizeEstimated;
-
-                if ($metadata !== [] && ! $skipSizeEnrichment) {
-                    [$sizeBytes, $sizeEstimated] = $this->sizeFromEntry($metadata);
-                }
-                $published = $item->publishedAt;
-
-                if (is_int($metadata['timestamp'] ?? null)) {
-                    $published = (new DateTimeImmutable('@' . $metadata['timestamp']))->setTimezone(new \DateTimeZone('UTC'))->format(DATE_RFC3339);
-                } elseif (is_string($metadata['upload_date'] ?? null) && preg_match('/^\d{8}$/', $metadata['upload_date']) === 1) {
-                    $date = DateTimeImmutable::createFromFormat('!Ymd', $metadata['upload_date'], new \DateTimeZone('UTC'));
-                    $published = $date instanceof DateTimeImmutable ? $date->format(DATE_RFC3339) : null;
-                }
-
-                $duration = is_int($metadata['duration'] ?? null) || is_float($metadata['duration'] ?? null) ? (int) $metadata['duration'] : $item->durationSeconds;
-
-                return new DiscoveredItem($item->id, $item->reference, $this->string($metadata['title'] ?? null) ?? $item->title, $this->string($metadata['description'] ?? null) ?? $item->description, $published, $this->string($metadata['thumbnail'] ?? null) ?? $item->artworkReference, $duration, $this->string($metadata['live_status'] ?? null) ?? $item->kind, $sizeBytes, $sizeEstimated, $item->upstreamState);
-            }, $items);
-        } catch (Throwable) {
-            return $items;
-        }
-    }
-
-    /**
      * @param array<string, mixed> $entry
      * @return array{0:?int,1:bool}
      */
@@ -340,7 +280,7 @@ final class YouTubeInput implements InputPlugin
         $roles = $requested === null ? [ArtifactRole::Primary, ArtifactRole::Captions, ArtifactRole::Artwork, ArtifactRole::Metadata] : $requested;
         $wantsPrimary = in_array(ArtifactRole::Primary, $roles, true);
         $output = 'youtube-' . preg_replace('/[^A-Za-z0-9_-]/', '_', $item->id);
-        $args = ['--no-playlist', '--newline', '--no-warnings', '--progress', '--restrict-filenames', '--progress-template', 'download:progress=%(progress._percent_str)s', '--ffmpeg-location', '/plugin/stashd-plugin/helpers', '--print', 'after_move:filepath', '--print', 'after_video:%(.{requested_subtitles,thumbnails,infojson_filename})j', '--output', $output . '.%(ext)s'];
+        $args = ['--no-playlist', '--newline', '--no-warnings', '--progress', '--restrict-filenames', '--progress-template', 'download:progress=%(progress._percent)s;total=%(progress.total_bytes)s;estimate=%(progress.total_bytes_estimate)s', '--ffmpeg-location', '/plugin/stashd-plugin/helpers', '--print', 'after_move:filepath', '--print', 'after_video:%(.{requested_subtitles,thumbnails,infojson_filename})j', '--output', $output . '.%(ext)s'];
 
         if (! $wantsPrimary) {
             $args[] = '--skip-download';
@@ -371,12 +311,22 @@ final class YouTubeInput implements InputPlugin
         }
         $args[] = $item->reference;
         $result = $this->context->helpers->run('yt-dlp', $args, function (string $channel, string $buffer): void {
-            if (preg_match('/progress=\s*([0-9]+(?:\.[0-9]+)?)%/', $buffer, $match) !== 1) {
+            if (preg_match('/progress=\s*([0-9]+(?:\.[0-9]+)?)%(?:;total=([^;]+);estimate=([^\s\r\n]+))?/', $buffer, $match) !== 1) {
                 return;
             }
 
             $fraction = min(1.0, max(0.0, (float) $match[1] / 100));
-            $this->context->progress->report('Downloading', $fraction);
+            $exact = $match[2] ?? null;
+            $approx = $match[3] ?? null;
+            $total = is_numeric($exact) ? (int) $exact : (is_numeric($approx) ? (int) $approx : null);
+            $estimated = ! is_numeric($exact) && $total !== null;
+            $progress = ['Downloading', $fraction];
+
+            if ((new \ReflectionMethod($this->context->progress, 'report'))->getNumberOfParameters() >= 4) {
+                $progress[] = $total;
+                $progress[] = $estimated;
+            }
+            call_user_func_array([$this->context->progress, 'report'], $progress);
         });
 
         if ($result->exitCode !== 0 && $requested !== null && preg_match('/(?:country|region|not available in your country)/i', $result->stderr) === 1) {
@@ -397,7 +347,7 @@ final class YouTubeInput implements InputPlugin
             }
 
             $metadata = json_decode($line, true);
-            $paths = is_array($metadata) ? $this->pathsFromMetadata($metadata) : [['path' => $line, 'language' => null]];
+            $paths = is_array($metadata) ? $this->pathsFromMetadata($metadata) : [['path' => $line, 'language' => $this->languageFromPath($line)]];
 
             foreach ($paths as $discovered) {
                 $path = $discovered['path'];
@@ -413,13 +363,20 @@ final class YouTubeInput implements InputPlugin
                 if ($role === null) {
                     continue;
                 }
+                $language = $discovered['language'] ?? ($role === 'subtitle' ? $this->languageFromPath($name) : null);
                 $staged = $this->context->staging->stage($name, $this->mediaType($name));
-                $artifacts[] = new StagedArtifact($staged->reference, $staged->mediaType, $staged->sizeBytes, $role, $discovered['language']);
+                $artifacts[] = new StagedArtifact($staged->reference, $staged->mediaType, $staged->sizeBytes, $role, $language);
             }
         }
 
-        if ($requested === null && ! array_filter($artifacts, static fn(StagedArtifact $artifact): bool => $artifact->role === 'primary')) {
+        $primary = array_values(array_filter($artifacts, static fn(StagedArtifact $artifact): bool => $artifact->role === 'primary'));
+
+        if ($requested === null && $primary === []) {
             throw new RuntimeException('acquisition produced no primary media artifact');
+        }
+
+        if ($primary !== [] && $item->durationSeconds !== null) {
+            $this->observe($item->id, $item->durationSeconds, $options->mediaKind, $primary[0]->sizeBytes);
         }
 
         if ($requested !== null) {
@@ -498,6 +455,13 @@ final class YouTubeInput implements InputPlugin
         $name = basename($path);
 
         return $name === '' || $name === '.' || $name === '..' ? null : $name;
+    }
+
+    private function languageFromPath(string $path): ?string
+    {
+        return preg_match('/\.([a-z]{2,3}(?:-[A-Za-z0-9]+)?)\.vtt$/i', basename($path), $matches) === 1
+            ? strtolower($matches[1])
+            : null;
     }
 
     /** @return list<InputOption> */
@@ -628,9 +592,7 @@ final class YouTubeInput implements InputPlugin
         $url = $this->url('https://www.youtube.com/oembed', ['format' => 'json', 'url' => $reference]);
         $payload = $this->json($this->http('GET', $url));
 
-        [$sizeBytes, $sizeEstimated] = $this->context->helpers !== null ? $this->sizeEstimate($reference) : [null, false];
-
-        return [new DiscoveredItem($id, $reference, $this->string($payload['title'] ?? null) ?? $id, artworkReference: $this->string($payload['thumbnail_url'] ?? null), sizeBytes: $sizeBytes, sizeEstimated: $sizeEstimated)];
+        return [new DiscoveredItem($id, $reference, $this->string($payload['title'] ?? null) ?? $id, artworkReference: $this->string($payload['thumbnail_url'] ?? null))];
     }
 
     /** @param array<string, mixed> $snippet */
@@ -662,10 +624,12 @@ final class YouTubeInput implements InputPlugin
                     continue;
                 }
                 $snippet = $this->object($entry['snippet'] ?? null) ?? [];
-                $thumbnails = $this->object($snippet['thumbnails'] ?? null);
-                $high = $this->object($thumbnails['high'] ?? null);
-                $contentDetails = $this->object($entry['contentDetails'] ?? null) ?? [];
-                $byId[$id] = new DiscoveredItem($id, $this->url('https://www.youtube.com/watch', ['v' => $id]), $this->string($snippet['title'] ?? null) ?? $id, $this->string($snippet['description'] ?? null), $this->string($snippet['publishedAt'] ?? null), $this->string($high['url'] ?? null), $this->duration($contentDetails['duration'] ?? null), isset($entry['liveStreamingDetails']) ? 'live' : null);
+                $thumbs = $this->object($snippet['thumbnails'] ?? null) ?? [];
+                $content = $this->object($entry['contentDetails'] ?? null) ?? [];
+                $duration = $this->duration($content['duration'] ?? null);
+                [$size, $estimated] = $this->estimate($id, $duration, $content['definition'] ?? null, $thumbs);
+                $high = $this->object($thumbs['high'] ?? null);
+                $byId[$id] = new DiscoveredItem($id, $this->url('https://www.youtube.com/watch', ['v' => $id]), $this->string($snippet['title'] ?? null) ?? $id, $this->string($snippet['description'] ?? null), $this->string($snippet['publishedAt'] ?? null), $this->string($high['url'] ?? null), $duration, isset($entry['liveStreamingDetails']) ? 'live' : null, is_int($size) ? $size : null, $estimated === true);
             }
         }
 
@@ -876,53 +840,89 @@ final class YouTubeInput implements InputPlugin
         };
     }
 
-    /** @return array{0:?int,1:bool} */
-    private function sizeEstimate(string $reference): array
+    private function estimator(): \PDO
     {
-        if ($this->context->helpers === null) {
-            return [null, false];
+        $root = get_object_vars($this->context)['pluginDataPath'] ?? null;
+
+        if (! is_string($root) || $root === '') {
+            throw new RuntimeException('The persistent plugin data directory is unavailable.');
         }
 
+        if (! is_dir($root)) {
+            mkdir($root, 0700, true);
+        }
+        $path = rtrim($root, '/') . '/estimator.sqlite';
+        $db = new \PDO('sqlite:' . $path);
+        $db->exec('CREATE TABLE IF NOT EXISTS discoveries (id TEXT PRIMARY KEY, duration INTEGER, bucket TEXT, seen_at INTEGER)');
+        $db->exec('CREATE TABLE IF NOT EXISTS observations (profile TEXT, bucket TEXT, duration INTEGER, bytes INTEGER, seen_at INTEGER)');
+
+        return $db;
+    }
+
+    /** @param array<string, mixed> $thumbs */
+    private function bucket(?string $definition, array $thumbs): string
+    {
+        $widths = [];
+
+        foreach (['fhd','qhd','uhd'] as $key) {
+            $v = $this->object($thumbs[$key] ?? null);
+
+            if ($v !== null && is_int($v['width'] ?? null)) {
+                $widths[] = $v['width'];
+            }
+        }
+        $max = $widths === [] ? 0 : max($widths);
+
+        return $max >= 3800 ? 'uhd' : ($max >= 2400 ? 'qhd' : ($max >= 1900 ? 'fhd' : ($definition === 'hd' ? 'hd' : 'sd')));
+    }
+
+    /**
+     * @param array<string, mixed> $thumbs
+     * @return array{0:?int,1:bool}
+     */
+    private function estimate(string $id, ?int $duration, mixed $definition, array $thumbs): array
+    {
+        if ($duration === null || $duration <= 0) {
+            return [null, false];
+        }
+        $bucket = $this->bucket(is_string($definition) ? $definition : null, $thumbs);
+
         try {
-            $result = $this->context->helpers->run('yt-dlp', ['--no-playlist', '--no-warnings', '--dump-single-json', '--skip-download', '--format', 'bestvideo+bestaudio/best', $reference]);
+            $db = $this->estimator();
         } catch (Throwable) {
             return [null, false];
         }
+        $stmt = $db->prepare('SELECT bytes, duration FROM observations WHERE profile = ? AND bucket = ? ORDER BY seen_at DESC, rowid DESC LIMIT ' . self::ESTIMATOR_HISTORY_LIMIT);
+        $stmt->execute(['video-best-v1', $bucket]);
+        $rates = [];
 
-        $data = $this->object(json_decode(trim($result->stdout), true));
-
-        if ($data === null) {
-            foreach (array_reverse(preg_split('/\R+/', $result->stdout) ?: []) as $line) {
-                $data = $this->object(json_decode(trim($line), true));
-
-                if ($data !== null) {
-                    break;
-                }
+        foreach ($stmt->fetchAll(\PDO::FETCH_ASSOC) as $row) {
+            if (! is_array($row) || ! is_numeric($row['duration'] ?? null) || ! is_numeric($row['bytes'] ?? null) || (int) $row['duration'] <= 0) {
+                continue;
             }
+            $rates[] = (int) $row['bytes'] * 8 / (int) $row['duration'];
         }
+        sort($rates);
+        $middle = intdiv(count($rates), 2);
+        $rate = $rates === [] ? self::VIDEO_BOOTSTRAP_BITS_PER_SECOND[$bucket] : ($rates[$middle] + $rates[(count($rates) - 1) - $middle]) / 2;
+        $db->prepare('INSERT OR REPLACE INTO discoveries VALUES (?, ?, ?, ?)')->execute([$id, $duration, $bucket, time()]);
 
-        if ($result->exitCode !== 0 || $data === null) {
-            return [null, false];
-        }
-        $formats = is_array($data['requested_formats'] ?? null) ? $data['requested_formats'] : [$data];
-        $total = 0;
-        $estimated = false;
-
-        foreach ($formats as $format) {
-            if (! is_array($format)) {
-                return [null, false];
-            }
-            $exact = $format['filesize'] ?? null;
-            $approx = $format['filesize_approx'] ?? null;
-            $size = is_int($exact) || is_float($exact) ? $exact : $approx;
-
-            if (! is_int($size) && ! is_float($size)) {
-                return [null, false];
-            }
-            $total += (int) $size;
-            $estimated = $estimated || ! (is_int($exact) || is_float($exact));
-        }
-
-        return [$total > 0 ? $total : null, $total > 0 && $estimated];
+        return [(int) round($duration * $rate / 8), true];
     }
+
+    private function observe(string $id, int $duration, MediaKind $kind, int $bytes): void
+    {
+        try {
+            $db = $this->estimator();
+        } catch (Throwable) {
+            return;
+        }
+        $row = $db->prepare('SELECT bucket FROM discoveries WHERE id = ?');
+        $row->execute([$id]);
+        $bucket = $row->fetchColumn() ?: ($kind === MediaKind::Audio ? 'audio' : 'sd');
+        $profile = $kind === MediaKind::Audio ? 'audio-mp3-128-v1' : 'video-best-v1';
+        $db->prepare('INSERT INTO observations VALUES (?, ?, ?, ?, ?)')->execute([$profile, $bucket, $duration, $bytes, time()]);
+        $db->prepare('DELETE FROM observations WHERE rowid IN (SELECT rowid FROM observations WHERE profile = ? AND bucket = ? ORDER BY seen_at DESC, rowid DESC LIMIT -1 OFFSET ' . self::ESTIMATOR_HISTORY_LIMIT . ')')->execute([$profile, $bucket]);
+    }
+
 }
