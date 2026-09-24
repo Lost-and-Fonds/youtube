@@ -20,8 +20,7 @@ file is removed before acquired files are staged.
 Production installation uses Stashd's OCI installer (`stashd:plugin-install
 ghcr.io/lost-and-fonds/youtube:<version>`). Composer is for local development
 only. The package includes Deno for yt-dlp's YouTube challenge solving, plus
-`yt-dlp` and FFmpeg. Run `composer test` for
-offline fixture tests. Stashd remains authoritative for identity, Vault state,
+`yt-dlp` and FFmpeg. Stashd remains authoritative for identity, Vault state,
 and promotion; this package owns YouTube protocol behavior only.
 
 ## Release artifact

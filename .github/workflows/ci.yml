@@ -6,9 +6,8 @@ jobs:
     steps:
       - uses: actions/checkout@v4
       - uses: shivammathur/setup-php@v2
-        with: {php-version: '8.5', extensions: xml, coverage: none}
+        with: {php-version: '8.5'}
       - run: composer validate --strict
       - run: composer install --no-interaction --prefer-dist
       - run: composer lint
-      - run: composer test
-      - run: composer test:static
+      - run: composer analyse

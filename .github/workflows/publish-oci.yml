@@ -25,7 +25,7 @@ jobs:
       - uses: actions/checkout@v4
         with: {repository: Lost-and-Fonds/podcast, path: plugins/podcast}
       - uses: shivammathur/setup-php@v2
-        with: {php-version: '8.5', extensions: xml, coverage: none}
+        with: {php-version: '8.5', extensions: xml}
       - name: Install build dependencies
         working-directory: core
         run: composer install --no-interaction --prefer-dist --no-progress --no-scripts
