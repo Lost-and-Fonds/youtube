@@ -285,12 +285,13 @@ final class YouTubeInput implements InputPlugin
         $cookiePath = null;
 
         if (trim($cookies) !== '') {
-            $workingDirectory = getcwd();
+            $stagingPath = $this->context->stagingPath;
 
-            if ($workingDirectory === false || strlen($cookies) > 262144) {
+            if ($stagingPath === null || strlen($cookies) > 262144) {
                 throw new RuntimeException('YouTube cookies file is invalid or too large.');
             }
-            $cookiePath = $workingDirectory . '/.youtube-cookies-' . bin2hex(random_bytes(8)) . '.txt';
+            $cookieReference = '.youtube-cookies-' . bin2hex(random_bytes(8)) . '.txt';
+            $cookiePath = rtrim($stagingPath, '/') . '/' . $cookieReference;
 
             if (file_put_contents($cookiePath, $cookies, LOCK_EX) === false || ! chmod($cookiePath, 0600)) {
                 @unlink($cookiePath);
@@ -343,25 +344,38 @@ final class YouTubeInput implements InputPlugin
         }
         $args[] = $item->reference;
 
+        $progressBuffer = '';
+        $reportProgress = function (string $line): void {
+            if (preg_match('/progress=\s*([0-9]+(?:\.[0-9]+)?)%(?:;total=([^;]+);estimate=([^\s\r\n]+))?/', $line, $match) !== 1) {
+                return;
+            }
+            $fraction = min(1.0, max(0.0, (float) $match[1] / 100));
+            $exact = $match[2] ?? null;
+            $approx = $match[3] ?? null;
+            $total = is_numeric($exact) ? (int) $exact : (is_numeric($approx) ? (int) $approx : null);
+            $estimated = ! is_numeric($exact) && $total !== null;
+            $progress = ['Downloading', $fraction];
+
+            if ((new \ReflectionMethod($this->context->progress, 'report'))->getNumberOfParameters() >= 4) {
+                $progress[] = $total;
+                $progress[] = $estimated;
+            }
+            call_user_func_array([$this->context->progress, 'report'], $progress);
+        };
+
         try {
-            $result = $this->context->helpers->run('yt-dlp', $args, function (string $channel, string $buffer): void {
-                if (preg_match('/progress=\s*([0-9]+(?:\.[0-9]+)?)%(?:;total=([^;]+);estimate=([^\s\r\n]+))?/', $buffer, $match) !== 1) {
-                    return;
-                }
+            $result = $this->context->helpers->run('yt-dlp', $args, function (string $_channel, string $buffer) use (&$progressBuffer, $reportProgress): void {
+                $progressBuffer .= $buffer;
 
-                $fraction = min(1.0, max(0.0, (float) $match[1] / 100));
-                $exact = $match[2] ?? null;
-                $approx = $match[3] ?? null;
-                $total = is_numeric($exact) ? (int) $exact : (is_numeric($approx) ? (int) $approx : null);
-                $estimated = ! is_numeric($exact) && $total !== null;
-                $progress = ['Downloading', $fraction];
-
-                if ((new \ReflectionMethod($this->context->progress, 'report'))->getNumberOfParameters() >= 4) {
-                    $progress[] = $total;
-                    $progress[] = $estimated;
+                while (($newline = strpos($progressBuffer, "\n")) !== false) {
+                    $reportProgress(substr($progressBuffer, 0, $newline));
+                    $progressBuffer = substr($progressBuffer, $newline + 1);
                 }
-                call_user_func_array([$this->context->progress, 'report'], $progress);
             });
+
+            if ($progressBuffer !== '') {
+                $reportProgress($progressBuffer);
+            }
         } finally {
             if (is_string($cookiePath) && is_file($cookiePath)) {
                 unlink($cookiePath);

@@ -204,8 +204,10 @@ it('preserves the YouTube provider contract', function (): void {
     $helper = new YtHelper();
     $progress = new YtProgress();
     $dataPath = sys_get_temp_dir() . '/stashd-youtube-estimator-' . bin2hex(random_bytes(8));
+    $stagingPath = sys_get_temp_dir() . '/stashd-youtube-staging-' . bin2hex(random_bytes(8));
     mkdir($dataPath, 0700, true);
-    $plugin = new YouTubeInput(new PluginContext(http: $http, progress: $progress, staging: $stage, helpers: $helper, pluginDataPath: $dataPath));
+    mkdir($stagingPath, 0700, true);
+    $plugin = new YouTubeInput(new PluginContext(http: $http, progress: $progress, staging: $stage, helpers: $helper, pluginDataPath: $dataPath, stagingPath: $stagingPath));
     ytAssert($plugin->resolve(new SourceDescriptor(['url' => OptionValue::text('https://youtu.be/abc123')]))->id === 'video:abc123', 'short URL identity failed');
     ytAssert($plugin->resolve(new SourceDescriptor(['url' => OptionValue::text('https://www.youtube.com/playlist?list=PL123')]))->id === 'playlist:PL123', 'playlist identity failed');
     ytAssert($plugin->resolve(new SourceDescriptor(['url' => OptionValue::text('https://www.youtube.com/show/VLPLT4CnSLg99ng?season=1&sbp=ignored')]))->id === 'playlist:PLT4CnSLg99ng', 'show URL identity failed');
@@ -296,6 +298,9 @@ it('preserves the YouTube provider contract', function (): void {
     $acquired = $plugin->acquire($items[0], new AcquisitionOptions(MediaKind::Video));
     ytAssert(count($acquired->artifacts) === 3, 'helper artifacts were not classified');
     ytAssert(in_array(['Downloading', 0.35, 98765, true], $progress->updates, true), 'yt-dlp approximate total was not reported as estimated');
+    $helper->progressLine = "download:progress=10%;total=NA;estimate=NA\ndownload:progress=20%;total=NA;estimate=98765\n";
+    $plugin->acquire($items[0], new AcquisitionOptions(MediaKind::Video));
+    ytAssert(in_array(['Downloading', 0.2, 98765, true], $progress->updates, true), 'multiple progress records in one helper output chunk were not all reported');
     ytAssert($acquired->artifacts[0]->role === 'primary' && in_array('--format', $helper->args, true), 'video acquisition strategy failed');
     $runtime = array_search('--js-runtimes', $helper->args, true);
     ytAssert($runtime !== false && ($helper->args[$runtime + 1] ?? null) === 'deno:/plugin/stashd-plugin/helpers/deno', 'acquisition did not use the packaged JavaScript runtime');
@@ -308,6 +313,7 @@ it('preserves the YouTube provider contract', function (): void {
     $cookieArgument = array_search('--cookies', $helper->args, true);
     $extractorArgument = array_search('--extractor-args', $helper->args, true);
     ytAssert($cookieArgument !== false && $helper->cookieContent === $cookieJar, 'cookie file content did not reach the yt-dlp helper');
+    ytAssert(is_string($helper->cookiePath) && str_starts_with($helper->cookiePath, $stagingPath . '/'), 'temporary cookie file was not placed in transient staging');
     ytAssert(is_string($helper->cookiePath) && ! file_exists($helper->cookiePath), 'temporary cookie file was not removed after acquisition');
     ytAssert($extractorArgument !== false && ($helper->args[$extractorArgument + 1] ?? null) === 'youtube:po_token=web.gvs+fixture-po-token', 'PO token was not scoped to web GVS');
     $helper->progressLine = "download:progress=35.0%;total=12345;estimate=NA\n";
@@ -345,5 +351,7 @@ it('preserves the YouTube provider contract', function (): void {
             rmdir($path);
         }
     }
+
+    rmdir($stagingPath);
     expect(true)->toBeTrue();
 });
