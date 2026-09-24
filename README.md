@@ -10,6 +10,13 @@ media, `.info.json` metadata, thumbnails, and optional VTT captions. Video
 downloads are capped at 1080p; audio mode extracts MP3 at 128 kbps. Shorts and
 live/premiere items are excluded unless enabled by input options.
 
+Optional authenticated-download credentials are configured under Stashd's
+plugin credentials: upload a Netscape-format `cookies.txt` file and, when
+needed, enter a PO token. A bare token is sent as a `web.gvs` token; an explicit
+context can be supplied as `web.gvs+TOKEN`. Credentials are encrypted by
+Stashd, passed only to this plugin during acquisition, and the temporary cookie
+file is removed before acquired files are staged.
+
 Production installation uses Stashd's OCI installer (`stashd:plugin-install
 ghcr.io/lost-and-fonds/youtube:<version>`). Composer is for local development
 only. The package includes Deno for yt-dlp's YouTube challenge solving, plus

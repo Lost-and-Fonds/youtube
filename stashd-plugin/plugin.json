@@ -1,7 +1,7 @@
 {
   "id": "youtube",
   "name": "YouTube",
-  "version": "0.3.50",
+  "version": "0.3.51",
   "runtime": "php",
   "api_version": "0.2",
   "entrypoint": "stashd-plugin/plugin.php",
@@ -15,7 +15,9 @@
   ],
   "source_prefixes": ["https://www.youtube.com/", "https://youtube.com/", "https://m.youtube.com/", "https://music.youtube.com/", "https://youtu.be/", "http://www.youtube.com/", "http://youtube.com/", "http://m.youtube.com/", "http://music.youtube.com/", "http://youtu.be/"],
   "credentials": [
-    {"key": "youtube-data-api", "label": "YouTube Data API key", "description": "Improves complete channel and playlist discovery.", "secret_key": "youtube_data_api_key", "secret_type": "api_key", "required": false}
+    {"key": "youtube-data-api", "label": "YouTube Data API key", "description": "Improves complete channel and playlist discovery.", "secret_key": "youtube_data_api_key", "secret_type": "api_key", "required": false},
+    {"key": "youtube-cookies", "label": "YouTube cookies.txt", "description": "Upload a Netscape-format cookies.txt file for authenticated downloads. The file is encrypted at rest and only exposed to this plugin during acquisition.", "secret_key": "youtube_cookies_txt", "secret_type": "generic", "input_type": "file", "raw_access": true, "required": false},
+    {"key": "youtube-po-token", "label": "YouTube PO token", "description": "Optional web GVS PO token. A raw token is treated as web.gvs; prefix it with another context such as mweb.gvs+ if needed.", "secret_key": "youtube_po_token", "secret_type": "generic", "input_type": "password", "raw_access": true, "required": false}
   ],
   "http_grants": [
     {"allowed_prefixes": ["https://www.youtube.com/", "https://youtube.com/", "https://m.youtube.com/", "https://music.youtube.com/", "https://youtu.be/"], "operations": ["resolve", "refresh", "complete"]},

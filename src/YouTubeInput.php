@@ -281,6 +281,38 @@ final class YouTubeInput implements InputPlugin
         $wantsPrimary = in_array(ArtifactRole::Primary, $roles, true);
         $output = 'youtube-' . preg_replace('/[^A-Za-z0-9_-]/', '_', $item->id);
         $args = ['--js-runtimes', 'deno:/plugin/stashd-plugin/helpers/deno', '--no-playlist', '--newline', '--no-warnings', '--progress', '--restrict-filenames', '--progress-template', 'download:progress=%(progress._percent)s;total=%(progress.total_bytes)s;estimate=%(progress.total_bytes_estimate)s', '--ffmpeg-location', '/plugin/stashd-plugin/helpers', '--print', 'after_move:filepath', '--print', 'after_video:%(.{requested_subtitles,thumbnails,infojson_filename})j', '--output', $output . '.%(ext)s'];
+        $cookies = $options->credentials['youtube-cookies'] ?? '';
+        $cookiePath = null;
+
+        if (trim($cookies) !== '') {
+            $workingDirectory = getcwd();
+
+            if ($workingDirectory === false || strlen($cookies) > 262144) {
+                throw new RuntimeException('YouTube cookies file is invalid or too large.');
+            }
+            $cookiePath = $workingDirectory . '/.youtube-cookies-' . bin2hex(random_bytes(8)) . '.txt';
+
+            if (file_put_contents($cookiePath, $cookies, LOCK_EX) === false || ! chmod($cookiePath, 0600)) {
+                @unlink($cookiePath);
+
+                throw new RuntimeException('YouTube cookies file could not be prepared.');
+            }
+            array_push($args, '--cookies', $cookiePath);
+        }
+
+        $poToken = trim($options->credentials['youtube-po-token'] ?? '');
+
+        if ($poToken !== '') {
+            if (preg_match('/\s/', $poToken) === 1) {
+                if (is_string($cookiePath)) {
+                    unlink($cookiePath);
+                }
+
+                throw new RuntimeException('YouTube PO token must not contain whitespace.');
+            }
+            $qualifiedToken = str_contains($poToken, '.') && str_contains($poToken, '+') ? $poToken : 'web.gvs+' . $poToken;
+            array_push($args, '--extractor-args', 'youtube:po_token=' . $qualifiedToken);
+        }
 
         if (! $wantsPrimary) {
             $args[] = '--skip-download';
@@ -310,24 +342,31 @@ final class YouTubeInput implements InputPlugin
             }
         }
         $args[] = $item->reference;
-        $result = $this->context->helpers->run('yt-dlp', $args, function (string $channel, string $buffer): void {
-            if (preg_match('/progress=\s*([0-9]+(?:\.[0-9]+)?)%(?:;total=([^;]+);estimate=([^\s\r\n]+))?/', $buffer, $match) !== 1) {
-                return;
-            }
 
-            $fraction = min(1.0, max(0.0, (float) $match[1] / 100));
-            $exact = $match[2] ?? null;
-            $approx = $match[3] ?? null;
-            $total = is_numeric($exact) ? (int) $exact : (is_numeric($approx) ? (int) $approx : null);
-            $estimated = ! is_numeric($exact) && $total !== null;
-            $progress = ['Downloading', $fraction];
+        try {
+            $result = $this->context->helpers->run('yt-dlp', $args, function (string $channel, string $buffer): void {
+                if (preg_match('/progress=\s*([0-9]+(?:\.[0-9]+)?)%(?:;total=([^;]+);estimate=([^\s\r\n]+))?/', $buffer, $match) !== 1) {
+                    return;
+                }
 
-            if ((new \ReflectionMethod($this->context->progress, 'report'))->getNumberOfParameters() >= 4) {
-                $progress[] = $total;
-                $progress[] = $estimated;
+                $fraction = min(1.0, max(0.0, (float) $match[1] / 100));
+                $exact = $match[2] ?? null;
+                $approx = $match[3] ?? null;
+                $total = is_numeric($exact) ? (int) $exact : (is_numeric($approx) ? (int) $approx : null);
+                $estimated = ! is_numeric($exact) && $total !== null;
+                $progress = ['Downloading', $fraction];
+
+                if ((new \ReflectionMethod($this->context->progress, 'report'))->getNumberOfParameters() >= 4) {
+                    $progress[] = $total;
+                    $progress[] = $estimated;
+                }
+                call_user_func_array([$this->context->progress, 'report'], $progress);
+            });
+        } finally {
+            if (is_string($cookiePath) && is_file($cookiePath)) {
+                unlink($cookiePath);
             }
-            call_user_func_array([$this->context->progress, 'report'], $progress);
-        });
+        }
 
         if ($result->exitCode !== 0 && $requested !== null && preg_match('/(?:country|region|not available in your country)/i', $result->stderr) === 1) {
             return new AcquisitionResult(unavailable: array_map(static fn(ArtifactRole $role): UnavailableArtifact => new UnavailableArtifact($role, true, 'The requested asset is unavailable in this region.'), $roles));

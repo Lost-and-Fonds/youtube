@@ -114,6 +114,8 @@ it('preserves the YouTube provider contract', function (): void {
         public int $completeExitCode = 0;
         public int $invocations = 0;
         public string $completeStderr = '';
+        public ?string $cookieContent = null;
+        public ?string $cookiePath = null;
         public bool $captionMissing = false;
         public string $progressLine = "download:progress=35.0%;total=NA;estimate=98765\n";
         public string $captionPath = 'youtube-vid1.en.vtt';
@@ -126,6 +128,12 @@ it('preserves the YouTube provider contract', function (): void {
             $this->invocations++;
             ytAssert($name === 'yt-dlp', 'wrong helper');
             $this->args = $arguments;
+            $cookieArgument = array_search('--cookies', $arguments, true);
+
+            if ($cookieArgument !== false && is_string($arguments[$cookieArgument + 1] ?? null)) {
+                $this->cookiePath = $arguments[$cookieArgument + 1];
+                $this->cookieContent = file_get_contents($this->cookiePath) ?: null;
+            }
 
             if (in_array('--dump-json', $arguments, true)) {
                 $this->metadataRequests[] = $arguments;
@@ -295,6 +303,13 @@ it('preserves the YouTube provider contract', function (): void {
     ytAssert($ffmpegLocation !== false && ($helper->args[$ffmpegLocation + 1] ?? null) === '/plugin/stashd-plugin/helpers', 'bundled ffmpeg path was not configured');
     ytAssert(in_array('--write-subs', $helper->args, true) && ! in_array('--write-auto-subs', $helper->args, true), 'creator captions were not enabled by default');
     ytAssert(in_array(0.35, $progress->fractions, true), 'yt-dlp progress was not translated');
+    $cookieJar = "# Netscape HTTP Cookie File\n.youtube.com\tTRUE\t/\tTRUE\t0\tSID\tfixture-session\n";
+    $plugin->acquire($items[0], new AcquisitionOptions(MediaKind::Video, credentials: ['youtube-cookies' => $cookieJar, 'youtube-po-token' => 'fixture-po-token']));
+    $cookieArgument = array_search('--cookies', $helper->args, true);
+    $extractorArgument = array_search('--extractor-args', $helper->args, true);
+    ytAssert($cookieArgument !== false && $helper->cookieContent === $cookieJar, 'cookie file content did not reach the yt-dlp helper');
+    ytAssert(is_string($helper->cookiePath) && ! file_exists($helper->cookiePath), 'temporary cookie file was not removed after acquisition');
+    ytAssert($extractorArgument !== false && ($helper->args[$extractorArgument + 1] ?? null) === 'youtube:po_token=web.gvs+fixture-po-token', 'PO token was not scoped to web GVS');
     $helper->progressLine = "download:progress=35.0%;total=12345;estimate=NA\n";
     $plugin->acquire($items[0], new AcquisitionOptions(MediaKind::Video));
     ytAssert(in_array(['Downloading', 0.35, 12345, false], $progress->updates, true), 'yt-dlp exact total was incorrectly marked estimated');
