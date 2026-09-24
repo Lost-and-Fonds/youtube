@@ -1,7 +1,7 @@
 {
   "id": "youtube",
   "name": "YouTube",
-  "version": "0.3.49",
+  "version": "0.3.50",
   "runtime": "php",
   "api_version": "0.2",
   "entrypoint": "stashd-plugin/plugin.php",
@@ -23,6 +23,7 @@
   ],
   "helpers": {
     "yt-dlp": {"executable": "stashd-plugin/helpers/yt-dlp", "network": true},
+    "deno": {"executable": "stashd-plugin/helpers/deno", "network": false},
     "ffmpeg": {"executable": "stashd-plugin/helpers/ffmpeg", "network": false}
   },
   "source_fields": [

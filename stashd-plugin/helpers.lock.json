@@ -1,6 +1,15 @@
 {
   "schema": 1,
   "helpers": {
+    "deno": {
+      "version": "2.9.7",
+      "license": "MIT",
+      "source": "https://github.com/denoland/deno/releases/tag/v2.9.7",
+      "platforms": {
+        "linux-amd64": {"url": "https://github.com/denoland/deno/releases/download/v2.9.7/deno-x86_64-unknown-linux-gnu.zip", "sha256": "c6527f24f4b16031d3ae4fa9f658d5f11534c8d84ce7dc8502420280919c3490", "archive_binary": "deno", "archive_format": "zip"},
+        "linux-arm64": {"url": "https://github.com/denoland/deno/releases/download/v2.9.7/deno-aarch64-unknown-linux-gnu.zip", "sha256": "c832298b1ad4422481334855f6003e0f54145762c5a134f20a489511d2f65bbf", "archive_binary": "deno", "archive_format": "zip"}
+      }
+    },
     "yt-dlp": {
       "version": "2026.08.19",
       "license": "Unlicense",

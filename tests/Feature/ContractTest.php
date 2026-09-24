@@ -271,6 +271,8 @@ it('preserves the YouTube provider contract', function (): void {
     $helper->completeStderr = 'ERROR: [youtube] blocked1: The uploader has not made this video available in your country';
     $backfill = $plugin->discover('UCfixture123', \Stashd\PluginSdk\DiscoveryIntent::Complete);
     ytAssert(count($backfill) === 2 && $backfill[0]->id === 'backfill1' && $backfill[1]->upstreamState === 'region_blocked', 'yt-dlp incomplete discovery item failed');
+    $runtime = array_search('--js-runtimes', $helper->args, true);
+    ytAssert($runtime !== false && ($helper->args[$runtime + 1] ?? null) === 'deno:/plugin/stashd-plugin/helpers/deno', 'complete discovery did not use the packaged JavaScript runtime');
     ytAssert($backfill[0]->publishedAt === '2026-01-01T00:00:00+00:00' && $backfill[0]->durationSeconds === null, 'complete discovery performed full metadata enrichment');
     $helper->completeExitCode = 0;
     $helper->completeStderr = '';
@@ -287,6 +289,8 @@ it('preserves the YouTube provider contract', function (): void {
     ytAssert(count($acquired->artifacts) === 3, 'helper artifacts were not classified');
     ytAssert(in_array(['Downloading', 0.35, 98765, true], $progress->updates, true), 'yt-dlp approximate total was not reported as estimated');
     ytAssert($acquired->artifacts[0]->role === 'primary' && in_array('--format', $helper->args, true), 'video acquisition strategy failed');
+    $runtime = array_search('--js-runtimes', $helper->args, true);
+    ytAssert($runtime !== false && ($helper->args[$runtime + 1] ?? null) === 'deno:/plugin/stashd-plugin/helpers/deno', 'acquisition did not use the packaged JavaScript runtime');
     $ffmpegLocation = array_search('--ffmpeg-location', $helper->args, true);
     ytAssert($ffmpegLocation !== false && ($helper->args[$ffmpegLocation + 1] ?? null) === '/plugin/stashd-plugin/helpers', 'bundled ffmpeg path was not configured');
     ytAssert(in_array('--write-subs', $helper->args, true) && ! in_array('--write-auto-subs', $helper->args, true), 'creator captions were not enabled by default');

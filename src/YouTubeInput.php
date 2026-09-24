@@ -176,7 +176,7 @@ final class YouTubeInput implements InputPlugin
         $url = $kind === 'playlist'
             ? $this->url('https://www.youtube.com/playlist', ['list' => $id])
             : $this->url('https://www.youtube.com/channel/' . rawurlencode($id));
-        $result = $this->context->helpers->run('yt-dlp', ['--ignore-errors', '--flat-playlist', '--dump-single-json', '--skip-download', '--no-warnings', $url]);
+        $result = $this->context->helpers->run('yt-dlp', ['--js-runtimes', 'deno:/plugin/stashd-plugin/helpers/deno', '--ignore-errors', '--flat-playlist', '--dump-single-json', '--skip-download', '--no-warnings', $url]);
 
         $payload = json_decode($result->stdout, true);
 
@@ -280,7 +280,7 @@ final class YouTubeInput implements InputPlugin
         $roles = $requested === null ? [ArtifactRole::Primary, ArtifactRole::Captions, ArtifactRole::Artwork, ArtifactRole::Metadata] : $requested;
         $wantsPrimary = in_array(ArtifactRole::Primary, $roles, true);
         $output = 'youtube-' . preg_replace('/[^A-Za-z0-9_-]/', '_', $item->id);
-        $args = ['--no-playlist', '--newline', '--no-warnings', '--progress', '--restrict-filenames', '--progress-template', 'download:progress=%(progress._percent)s;total=%(progress.total_bytes)s;estimate=%(progress.total_bytes_estimate)s', '--ffmpeg-location', '/plugin/stashd-plugin/helpers', '--print', 'after_move:filepath', '--print', 'after_video:%(.{requested_subtitles,thumbnails,infojson_filename})j', '--output', $output . '.%(ext)s'];
+        $args = ['--js-runtimes', 'deno:/plugin/stashd-plugin/helpers/deno', '--no-playlist', '--newline', '--no-warnings', '--progress', '--restrict-filenames', '--progress-template', 'download:progress=%(progress._percent)s;total=%(progress.total_bytes)s;estimate=%(progress.total_bytes_estimate)s', '--ffmpeg-location', '/plugin/stashd-plugin/helpers', '--print', 'after_move:filepath', '--print', 'after_video:%(.{requested_subtitles,thumbnails,infojson_filename})j', '--output', $output . '.%(ext)s'];
 
         if (! $wantsPrimary) {
             $args[] = '--skip-download';

@@ -12,12 +12,13 @@ live/premiere items are excluded unless enabled by input options.
 
 Production installation uses Stashd's OCI installer (`stashd:plugin-install
 ghcr.io/lost-and-fonds/youtube:<version>`). Composer is for local development
-only. The package requires PHP 8.5, `yt-dlp`, and FFmpeg in the plugin bundle. Run `composer test` for
+only. The package includes Deno for yt-dlp's YouTube challenge solving, plus
+`yt-dlp` and FFmpeg. Run `composer test` for
 offline fixture tests. Stashd remains authoritative for identity, Vault state,
 and promotion; this package owns YouTube protocol behavior only.
 
 ## Release artifact
 
-`stashd-plugin/helpers.lock.json` pins yt-dlp and FFmpeg payloads for
+`stashd-plugin/helpers.lock.json` pins Deno, yt-dlp, and FFmpeg payloads for
 linux/amd64 and linux/arm64. Core verifies and materializes them; host PATH is
 not used.
